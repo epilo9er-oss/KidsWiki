@@ -1,7 +1,8 @@
 import { Hono, type Context } from 'hono';
 import type { Env, Page, Revision, User } from '../types';
 import { requireAuth, requireAdmin, requirePermission } from '../middleware/session';
-import { normalizeSlug, isR2OnlyNamespace, isMapNamespace } from '../utils/slug';
+import { normalizeSlug, isR2OnlyNamespace, isMapNamespace, subtreeSlugRange } from '../utils/slug';
+import { sqlContains } from '../utils/sqlText';
 import { computePageMetricsTracked } from '../utils/pageMetrics';
 import { SLUG_FORBIDDEN_CHARS, TITLE_FORBIDDEN_CHARS, TITLE_MAX_LENGTH, normalizeTitleInput } from '../utils/validation';
 import { getEnabledExtensions } from '../utils/extensions';
@@ -970,8 +971,9 @@ wiki.get('/w/search-titles', async (c) => {
     }
 
     if (q.length > 0) {
-        query += ' AND slug LIKE ?';
-        params.push(`%${q}%`);
+        // LIKE 대신 instr() — 긴 입력에서 D1 의 50바이트 패턴 한도에 걸리지 않는다 (sqlContains 주석).
+        query += ` AND ${sqlContains('slug')}`;
+        params.push(q);
         query += ' ORDER BY slug ASC';
     } else {
         // 빈 쿼리: 최근 수정 순 반환
@@ -1017,14 +1019,14 @@ wiki.get('/w/search-categories', async (c) => {
         const includePrivate = c.req.query('include_private') !== '0';
         const effectiveSeePrivate = canSeePrivate && includePrivate;
         const privacy = effectiveSeePrivate ? '' : ' AND p.is_private = 0';
-        const like = q.length > 0 ? ' AND pc.category LIKE ?' : '';
+        const like = q.length > 0 ? ` AND ${sqlContains('pc.category')}` : '';
         const stmt = db.prepare(
             `SELECT DISTINCT pc.category FROM page_categories pc
              JOIN pages p ON p.id = pc.page_id
              WHERE p.deleted_at IS NULL${privacy}${like}
              ORDER BY pc.category ASC LIMIT 8`
         );
-        const bound = q.length > 0 ? stmt.bind(`%${q}%`) : stmt;
+        const bound = q.length > 0 ? stmt.bind(q) : stmt;
         rows = (await bound.all<{ category: string }>()).results;
         return c.json({ results: rows.map(r => r.category) });
     }
@@ -1056,8 +1058,8 @@ wiki.get('/w/search-categories', async (c) => {
 
     if (q.length > 0) {
         const { results } = await db
-            .prepare(`SELECT DISTINCT category FROM page_categories WHERE category LIKE ?${adminFilter} ORDER BY category ASC LIMIT 8`)
-            .bind(`%${q}%`)
+            .prepare(`SELECT DISTINCT category FROM page_categories WHERE ${sqlContains('category')}${adminFilter} ORDER BY category ASC LIMIT 8`)
+            .bind(q)
             .all<{ category: string }>();
         rows = results;
     } else {
@@ -1221,8 +1223,8 @@ wiki.get('/w/templates', async (c) => {
     if (q) {
         const orderLimit = inline ? 'ORDER BY slug ASC LIMIT 30' : 'ORDER BY created_at DESC';
         const { results } = await db
-            .prepare(`SELECT slug FROM pages WHERE ${nsFilter} AND slug LIKE ? AND deleted_at IS NULL${privateFilter} ${orderLimit}`)
-            .bind(`%${q}%`)
+            .prepare(`SELECT slug FROM pages WHERE ${nsFilter} AND ${sqlContains('slug')} AND deleted_at IS NULL${privateFilter} ${orderLimit}`)
+            .bind(q)
             .all();
         return c.json({ templates: results });
     } else {
@@ -2986,20 +2988,26 @@ wiki.get('/w/:slug/subdocs', async (c) => {
     const canSeePrivate = !publicOnly && rbac.can(user?.role ?? 'guest', 'wiki:private');
     const privateFilter = canSeePrivate ? '' : ' AND is_private = 0';
 
+    // LIKE 패턴은 D1 의 50바이트 한도에 걸려 긴(특히 한글) 슬러그에서 쿼리가 통째로 실패한다.
+    // prefix 범위 비교로 대체한다 — 상세 근거는 subtreeSlugRange 주석 참고.
+    const range = subtreeSlugRange(slug);
+    if (!range) return c.json(safeJSON({ subdocs: [] }));
+
     if (immediate) {
-        // LIKE 와일드카드(%, _, \) 가 슬러그에 포함되어 있을 때 임의 매칭되지 않도록 이스케이프
-        const escaped = slug.replace(/[\\%_]/g, (ch) => '\\' + ch);
+        // 바로 아래 단계만: `base/` 를 떼고 남은 부분에 '/' 가 없으면 직속 자식이다.
+        // length()/substr() 은 둘 다 문자(코드포인트) 단위라 JS 의 UTF-16 length 와 달리
+        // 서로게이트 페어(이모지 등)가 섞인 슬러그에서도 어긋나지 않는다.
         const query = `
             SELECT slug, updated_at
             FROM pages
             WHERE deleted_at IS NULL${privateFilter}
-              AND slug LIKE ? ESCAPE '\\'
-              AND slug NOT LIKE ? ESCAPE '\\'
+              AND slug > ?1 AND slug < ?2
+              AND instr(substr(slug, length(?1) + 1), '/') = 0
             ORDER BY slug ASC LIMIT 200
         `;
         const { results } = await db
             .prepare(query)
-            .bind(escaped + '/%', escaped + '/%/%')
+            .bind(range.lower, range.upper)
             .all();
         return c.json(safeJSON({ subdocs: results }));
     }
@@ -3008,13 +3016,13 @@ wiki.get('/w/:slug/subdocs', async (c) => {
         SELECT slug, updated_at
         FROM pages
         WHERE deleted_at IS NULL${privateFilter}
-          AND slug LIKE ?
+          AND slug > ? AND slug < ?
         ORDER BY slug ASC LIMIT 200
     `;
 
     const { results } = await db
         .prepare(query)
-        .bind(slug + '/%')
+        .bind(range.lower, range.upper)
         .all();
 
     return c.json(safeJSON({ subdocs: results }));

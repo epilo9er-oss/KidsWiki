@@ -2537,6 +2537,24 @@ function buildPortableHtml(contentEl, options) {
         p.appendChild(st);
         return p;
     };
+    // 탭·아코디언 라벨은 아이콘 <i> 를 떨구려고 텍스트로 평탄화하는데, 그냥 textContent
+    // 를 쓰면 <code> 의 백틱까지 사라져 `{badge:x}` 같은 내용이 이식된 문서에서 리터럴
+    // 토큰으로 되살아난다(붙여넣어 다시 위키로 들어올 때 컴포넌트로 렌더). 코드 조각에
+    // 백틱을 되돌려 원문 표기를 보존한다.
+    // 중첩(<strong> 안의 <code> 등)까지 훑는다 — 현재 호출부의 라벨은 최상위 <code> 만
+    // 갖지만, 얕은 순회로 두면 재사용 시 조용히 백틱을 떨구는 함정이 된다.
+    const flattenLabelInner = (el) => {
+        let out = '';
+        el.childNodes.forEach(n => {
+            if (n.nodeType === 1 && n.tagName === 'CODE') out += '`' + (n.textContent || '') + '`';
+            else if (n.nodeType === 1) out += flattenLabelInner(n);
+            else out += n.textContent || '';
+        });
+        return out;
+    };
+    // trim 은 최상위에서만 — 중첩 단계에서 자르면 `<strong>굵게 </strong>뒤` 처럼
+    // 요소 경계에 걸친 공백이 사라져 단어가 붙어버린다.
+    const flattenLabel = (el) => (el ? flattenLabelInner(el).trim() : '');
     // {fs:} 크기 클래스(.wiki-fs-*) → 인라인 font-size 값 (render.css 와 동일).
     // 스탯/진행률처럼 원본 요소를 새 요소로 "교체"하는 변환은 클래스가 함께 사라져
     // 뒤쪽의 일괄 인라인화 패스가 잡지 못하므로, 교체 시점에 이 헬퍼로 직접 옮긴다.
@@ -2634,7 +2652,7 @@ function buildPortableHtml(contentEl, options) {
     // 7) 탭 → 순차 블록(제목 굵은 문단 + 패널 내용) — Bootstrap JS 없이 모든 탭 내용 노출
     root.querySelectorAll('.wiki-tabs').forEach(tabs => {
         const titles = Array.from(tabs.querySelectorAll(':scope > ul.nav-tabs .nav-link'))
-            .map(b => (b.textContent || '').trim());
+            .map(b => flattenLabel(b));
         const panes = Array.from(tabs.querySelectorAll(':scope > .tab-content > .tab-pane'));
         const frag = document.createDocumentFragment();
         panes.forEach((pane, i) => {
@@ -2649,7 +2667,7 @@ function buildPortableHtml(contentEl, options) {
         const frag = document.createDocumentFragment();
         Array.from(acc.querySelectorAll(':scope > .accordion-item')).forEach((item, i) => {
             const btn = item.querySelector('.accordion-button');
-            frag.appendChild(makeTitleP(btn ? (btn.textContent || '').trim() : `항목 ${i + 1}`));
+            frag.appendChild(makeTitleP(btn ? flattenLabel(btn) : `항목 ${i + 1}`));
             const body = item.querySelector('.accordion-body');
             if (body) { while (body.firstChild) frag.appendChild(body.firstChild); }
         });
@@ -3222,13 +3240,56 @@ function _resetStateKeyDedup() {
     _stateKeyDedup = Object.create(null);
     return _stateKeyDedup;
 }
+// 상태 키 본문 인코딩.
+//
+// {br} 은 이 시점에 이미 WIKIBRPHEND placeholder 라서 순수 ASCII 로 인코딩을 그대로
+// 통과하고, 렌더 마지막의 WIKIBRPHEND → <br> 치환이 속성값 안까지 다시 쓴다(따옴표가
+// 없어 태그가 깨지지는 않지만, 속성에 도달하는 마지막 재작성 경로다). 키에서는 의미가
+// 없으므로 공백으로 접어 속성값이 어떤 후처리에도 노출되지 않게 한다.
+//
+// encodeURIComponent 는 짝 없는 서로게이트(모바일 IME·잘린 붙여넣기로 유입 가능)에
+// URIError 를 던진다. 이때는 대체 문자로 바꾼 뒤 다시 인코딩해 중괄호·따옴표 제거
+// 보장을 유지한다 — 렌더가 죽지 않는 쪽이 우선이며, 서로게이트끼리는 구분이 사라지므로
+// 이 폴백 경로에 한해 단사가 아니다(정상 입력에서는 도달하지 않는다).
+function _encodeStateKeyPart(base) {
+    // 공백이 아니라 개행으로 접는다. 제목 줄은 한 줄이라 개행을 담을 수 없으므로
+    // (`A{br}B` → `A\nB` → `A%0AB`) 사용자가 타이핑할 수 있는 어떤 라벨과도 겹치지 않는다.
+    // 공백으로 접으면 `A{br}B` 와 `A B` 가 같은 키가 된다.
+    const t = base.replace(/WIKIBRPHEND/g, '\n');
+    try {
+        return encodeURIComponent(t);
+    } catch {
+        // u 플래그는 코드 포인트 단위로 매칭하므로 정상 서로게이트 쌍(이모지 등)은
+        // 건드리지 않고 짝 없는 서로게이트만 대체 문자로 바꾼다.
+        return encodeURIComponent(t.replace(/[\uD800-\uDFFF]/gu, '�'));
+    }
+}
 function _makeStateKey(prefix, text) {
     const base = (text == null ? '' : String(text)).trim().replace(/\s+/g, ' ');
     const k = `${prefix}|${base}`;
     const n = _stateKeyDedup[k] || 0;
     _stateKeyDedup[k] = n + 1;
-    // 키 자체는 attribute value 로 들어가므로 escapeHtml 처리한 결과를 돌려준다.
-    return escapeHtml(n === 0 ? k : `${k}#${n}`);
+    // 키 값은 percent-encode 해서 돌려준다.
+    //
+    // 이 값은 data-state-key 속성으로 나간 뒤 DOMPurify 를 지나고, 그 다음 문서 전체
+    // 토큰 패스(_processInlineLayoutTokens / _processTimestampsInHtml)를 통과한다.
+    // 두 패스는 <pre>/<code> 요소 내부만 건너뛸 뿐 attribute 문맥을 구분하지 못하므로,
+    // 제목에 `{badge:신규}` 같은 토큰이 있으면 속성값 안에서 <span class="..."> 로
+    // 치환되고 그 따옴표가 속성을 조기 종료시켜 시작 태그 자체가 깨진다.
+    //
+    // 엔티티 이스케이프로는 막을 수 없다 — DOMPurify.sanitize() 는 파싱 후 innerHTML 로
+    // 재직렬화하는데, attribute value 직렬화는 & · " · NBSP 만 escape 하므로 `&#123;` 는
+    // 토큰 패스가 보기 전에 이미 리터럴 `{` 로 되돌아온다. 따라서 디코드된 값 자체에
+    // 중괄호가 남지 않아야 한다.
+    //
+    // percent-encode 는 { } < > " & 를 모두 제거하고 재직렬화에도 불변이며, (위 폴백
+    // 경로를 제외하면) 단사이므로
+    // 서로 다른 제목이 같은 키로 충돌하지 않는다(escapeHtml 은 `<` 와 `&lt;` 가 한 키로
+    // 뭉개졌다). setAttribute 경로(_wrapLevelSections 의 섹션 키)와 innerHTML 경로가
+    // 동일한 값을 갖는 부수 효과도 있다. 키는 preview-state 가 DOM 끼리 비교하는 불투명
+    // 식별자일 뿐이라 가독성 손실은 무해하다.
+    const enc = `${prefix}|${_encodeStateKeyPart(base)}`;
+    return n === 0 ? enc : `${enc}#${n}`;
 }
 
 // 탭/아코디언의 {id:이름} 을 페이지 내 유일한 DOM id 로 변환한다. 같은 이름이
@@ -3328,6 +3389,40 @@ function _iconHtmlFromToken(iconCode) {
 }
 
 
+
+/**
+ * 코드 스팬/펜스 placeholder(WIKICODEFPH<n>XEND) 복원용 스냅샷.
+ *
+ * renderWikiContent 가 본문 전처리 직후 세팅하고, 같은 렌더 사이클(await 없음) 안에서
+ * 블록 디렉티브 제목 렌더링이 참조한다. 제목 줄은 본문(innerText)과 달리 `{bg:}`,
+ * `{span:N}`, `{id:이름}` 같은 옵션 토큰 파싱을 거치므로, 문자열 자체를 미리 복원하면
+ * 인라인 코드 안에 적힌 토큰(마크업 문법 문서에서 흔함)이 옵션으로 소비돼 버린다.
+ * 그래서 titleLine 은 placeholder 를 유지한 채 토큰을 추출하고, 실제 표시 직전
+ * (cleanTitle 단계)에만 _restoreCodeSpans 로 되돌린다.
+ */
+let _currentRenderCodeSpans = null;
+function _restoreCodeSpans(text) {
+    if (!text || !_currentRenderCodeSpans) return text;
+    return text.replace(/WIKICODEFPH(\d+)XEND/g, (m, i) => {
+        const src = _currentRenderCodeSpans[parseInt(i, 10)];
+        return src === undefined ? m : src;
+    });
+}
+
+/**
+ * 마크다운을 지원하지 않는 평문 라벨 채널(탭/아코디언/스텝 라벨, 펼치기 요약)용 이스케이프.
+ *
+ * escape 후 인라인 코드 스팬만 `<code>` 로 승격한다. 승격 없이 백틱을 그대로 두면
+ * DOMPurify 이후의 문서 전체 토큰 패스(_processInlineLayoutTokens /
+ * _processTimestampsInHtml)가 `{time:0}` 처럼 코드 안에 적힌 토큰까지 소비해 버린다
+ * (두 패스는 <pre>/<code> 요소 내부만 건너뛴다). 제목 채널이 marked.parseInline 으로
+ * 얻는 보호를 평문 채널에도 동일하게 부여하는 것이며, 결과적으로 카드 헤더와 같은
+ * 코드 표기를 얻는다. 코드 내용은 escape 이후의 문자열이라 그대로 감싸도 안전하다.
+ */
+function _escapeLabelWithCodeSpans(text) {
+    const esc = escapeHtml(text || '');
+    return esc.replace(/`([^`\n]+)`/g, (m, code) => `<code>${code}</code>`);
+}
 
 /**
  * 라인 기반 스택 파서. `:::type 제목` 오프너와 단독 `:::` 클로저로 블록을 수집.
@@ -3457,14 +3552,16 @@ function _renderBlockHtml(block, blockData) {
     if (bg && _isSafeCssColor(bg)) style += `background-color:${bg};`;
     if (color && _isSafeCssColor(color)) style += `color:${color};`;
     const styleAttr = style ? ` style="${style}"` : '';
+    // 옵션 토큰 추출이 끝난 뒤에 코드 스팬을 복원한다(제목의 인라인 코드가 그대로 보이도록).
+    const displayTitle = _restoreCodeSpans(cleanTitle);
     let titleHtml: string;
-    if (cleanTitle && typeof marked !== 'undefined') {
-        const { text: protectedTitle, prot: titleWlProt } = protectWikiLinks(cleanTitle);
+    if (displayTitle && typeof marked !== 'undefined') {
+        const { text: protectedTitle, prot: titleWlProt } = protectWikiLinks(displayTitle);
         titleHtml = marked.parseInline(protectedTitle) as string;
         titleHtml = restoreWikiLinks(titleHtml, titleWlProt);
         titleHtml = _processInlineLayoutTokens(titleHtml);
     } else {
-        titleHtml = escapeHtml(cleanTitle);
+        titleHtml = escapeHtml(displayTitle);
     }
 
     switch (type) {
@@ -3565,7 +3662,8 @@ function _renderBlockHtml(block, blockData) {
             // 검증한 float 전략의 사용자 문법 버전으로, 모바일(≤768px)에서는 render.css 가
             // float 를 해제하고 전체 폭으로 스택한다. infobox 는 float 위에 제목 헤더(팔레트
             // 토큰 적용)와 카드 chrome 을 얹는 설탕 문법.
-            const { cleanTitle: floatTitle, tokens: ft } = _extractStrictTokens(cleanTitle, WIKI_FLOAT_TOKEN_SCHEMA);
+            const { cleanTitle: floatTitleRaw, tokens: ft } = _extractStrictTokens(cleanTitle, WIKI_FLOAT_TOKEN_SCHEMA);
+            const floatTitle = _restoreCodeSpans(floatTitleRaw);
             const side = (ft.left && !ft.right) ? 'left' : 'right';
             const span = ft.span || '4';
             const floatCls = `wiki-float wiki-float--${side} wiki-float--span-${span}`;
@@ -3641,8 +3739,12 @@ function _renderBlockHtml(block, blockData) {
                 const navId = `${groupId}-tab-${i}`;
                 const isActive = i === 0;
                 const iconHtml = meta.tokens.icon ? _iconHtmlFromToken(meta.tokens.icon) + ' ' : '';
-                const labelEsc = escapeHtml(meta.cleanTitle || `탭 ${i + 1}`);
-                const tabKey = _makeStateKey('tab', meta.cleanTitle || `tab-${i}`);
+                // 라벨은 평문(마크다운 미지원)이지만 코드 스팬은 복원해 <code> 로 승격한다.
+                // 상태 키도 복원본 기준이어야 문서의 다른 코드 스팬 개수 변화에 따라
+                // placeholder 인덱스를 타고 키가 흔들리지 않는다.
+                const tabLabel = _restoreCodeSpans(meta.cleanTitle);
+                const labelEsc = _escapeLabelWithCodeSpans(tabLabel || `탭 ${i + 1}`);
+                const tabKey = _makeStateKey('tab', tabLabel || `tab-${i}`);
                 // {id:이름} 딥링크 앵커: 패널 내부 첫 자식으로 marker span 을 심어
                 // [[문서#이름]] 이동 시 getElementById → _expandAncestorsForScroll 이
                 // 접힌 탭을 자동으로 활성화하도록 한다(스크롤 대상도 패널 내부).
@@ -3693,10 +3795,11 @@ function _renderBlockHtml(block, blockData) {
                     else openSeen = true;
                 }
                 const iconHtml = meta.tokens.icon ? _iconHtmlFromToken(meta.tokens.icon) + ' ' : '';
-                const labelEsc = escapeHtml(meta.cleanTitle || `항목 ${i + 1}`);
+                const itemLabel = _restoreCodeSpans(meta.cleanTitle);
+                const labelEsc = _escapeLabelWithCodeSpans(itemLabel || `항목 ${i + 1}`);
                 const parentAttr = allowMultiple ? '' : ` data-bs-parent="#${groupId}"`;
                 const childInner = _renderChildInnerHtml(child.innerText, blockData);
-                const accKey = _makeStateKey('acc', meta.cleanTitle || `item-${i}`);
+                const accKey = _makeStateKey('acc', itemLabel || `item-${i}`);
                 // {id:이름} 딥링크 앵커: 접힌 항목 본문 내부에 marker 를 심어
                 // [[문서#이름]] 이동 시 _expandAncestorsForScroll 이 collapse 를 펼치게 한다.
                 const anchorMarker = meta.tokens.id
@@ -3723,7 +3826,7 @@ function _renderBlockHtml(block, blockData) {
                     status: { type: 'enum', values: ['done', 'current', 'todo'] }
                 });
                 const status = meta.tokens.status || 'todo';
-                const labelEsc = escapeHtml(meta.cleanTitle || `${i + 1}단계`);
+                const labelEsc = _escapeLabelWithCodeSpans(_restoreCodeSpans(meta.cleanTitle) || `${i + 1}단계`);
                 const ariaCurrent = status === 'current' ? ' aria-current="step"' : '';
                 const iconCls = status === 'done' ? 'bi-check-circle-fill'
                               : status === 'current' ? 'bi-circle-fill'
@@ -4981,6 +5084,10 @@ async function renderWikiContent(content, slug, containerId, options = {}) {
             codeBlocksForFold.push(m.replace(/^[\u200B\uFEFF]+/, '').replace(/\n[\u200B\uFEFF]+([`~]{3,}[ \t]*)$/, '\n$1'));
             return `WIKICODEFPH${idx}XEND`;
         });
+        // 블록 디렉티브 제목(`:::tip \`foo\` 설명`)은 옵션 토큰 파싱 때문에 placeholder 를
+        // 유지한 채로 _renderBlockHtml 까지 전달된다. 표시 직전 복원에 쓸 스냅샷을 세팅한다.
+        // (이 지점부터 블록/펼치기 렌더가 끝날 때까지 await 가 없으므로 동시 렌더와 섞이지 않는다.)
+        _currentRenderCodeSpans = codeBlocksForFold;
 
         // 줄 시작의 제로폭 문자(U+200B ZWSP / U+FEFF BOM) 제거. 모바일 IME·외부 앱
         // 붙여넣기로 유입되면 눈에 보이지 않으면서 헤딩(#)/목록/인용/표/폴드 등 줄 시작
@@ -5068,7 +5175,12 @@ async function renderWikiContent(content, slug, containerId, options = {}) {
             // 미등록 {palette:이름} 토큰은 렌더에 노출되지 않도록 조용히 제거 (표 셀 경로와 동일 정책)
             summaryText = summaryText.replace(/\{palette:\s*[^}]*\}/g, '');
 
-            summaryText = escapeHtml(summaryText.trim());
+            // 색 토큰 흡수가 끝난 뒤 코드 스팬 복원 (제목에 적힌 인라인 코드 안의 {bg:} 등이
+            // 스타일 토큰으로 소비되지 않도록 순서를 지킨다). 요약은 평문 채널이므로
+            // 코드 스팬만 <code> 로 승격한다.
+            // 상태 키는 표시용 HTML 이 아니라 복원된 평문에서 뽑는다(마크업이 키에 섞이지 않도록).
+            const summaryKeyText = _restoreCodeSpans(summaryText).trim();
+            summaryText = _escapeLabelWithCodeSpans(summaryKeyText);
 
             let bgAttr = bgOpt ? ` data-bg="${bgOpt}"` : '';
             let colorAttr = colorOpt ? ` data-color="${colorOpt}"` : '';
@@ -5099,7 +5211,7 @@ async function renderWikiContent(content, slug, containerId, options = {}) {
             });
             let contentHtml = (typeof DOMPurify !== 'undefined') ? DOMPurify.sanitize(rawContentHtml, { ADD_TAGS: ['i', 'span', 'details', 'summary', 'div', 'canvas'], ADD_ATTR: ['class', 'style', 'data-bg', 'data-color', 'data-size', 'data-align', 'data-caption', 'data-unix', 'data-temporal-ms', 'data-temporal-mode', 'hidden', 'data-ext-name', 'data-ext-idx', 'data-state-key', 'data-fn-html', 'data-fn-name', 'data-fn-ref', 'data-progress-auto', 'colspan', 'rowspan', 'title'] }) : escapeHtml(rawContentHtml);
 
-            foldBlocks.push({ summaryText, bgAttr, colorAttr, contentHtml });
+            foldBlocks.push({ summaryText, summaryKeyText, bgAttr, colorAttr, contentHtml });
             return `\n\nWIKIFOLDPH${idx}XEND\n\n`;
         });
 
@@ -5131,7 +5243,7 @@ async function renderWikiContent(content, slug, containerId, options = {}) {
         rawHtml = rawHtml.replace(/(?:<p>)?WIKIFOLDPH(\d+)XEND(?:<\/p>)?/g, (m, idx) => {
             const block = foldBlocks[parseInt(idx, 10)];
             if (!block) return '';
-            const foldKey = _makeStateKey('fold', block.summaryText);
+            const foldKey = _makeStateKey('fold', block.summaryKeyText);
             return `<details class="wiki-fold border rounded mb-3" data-state-key="${foldKey}"${block.bgAttr}${block.colorAttr}>` +
                 `<summary class="fw-bold p-2 wiki-fold-summary">${block.summaryText}</summary>` +
                 `<div class="wiki-fold-content p-3 border-top">${block.contentHtml}</div>` +

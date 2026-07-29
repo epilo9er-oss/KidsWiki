@@ -51,7 +51,8 @@ import {
 } from '../utils/categoryAcl';
 import { ensureDocSettingPrefixRulesMigration } from '../utils/docSettingPrefixRulesMigration';
 import { cleanupUnauthorizedSubscriptions } from '../utils/pageAccessCleanup';
-import { normalizeSlug } from '../utils/slug';
+import { normalizeSlug, subtreeSlugRange } from '../utils/slug';
+import { sqlContains } from '../utils/sqlText';
 import type {
     AnnouncementAdminDTO,
     AnnouncementCreateRequest,
@@ -88,8 +89,8 @@ adminRoutes.get('/users', async (c) => {
     const conditions: string[] = [];
 
     if (search) {
-        conditions.push(`(name LIKE ? OR email LIKE ?)`);
-        params.push(`%${search}%`, `%${search}%`);
+        conditions.push(`(${sqlContains('name')} OR ${sqlContains('email')})`);
+        params.push(search, search);
     }
 
     const role = c.req.query('role');
@@ -1482,14 +1483,12 @@ adminRoutes.get('/bulk-manage/search', async (c) => {
     if (!q) return c.json({ documents: [], total: 0, capped: false });
     const includeTitle = c.req.query('title') === '1';
 
-    // LIKE 메타문자(%, _, \) escape — 사용자 입력 그대로만 매치.
-    const likeEscaped = q.replace(/[\\%_]/g, '\\$&');
-    const likePattern = `%${likeEscaped}%`;
-
+    // LIKE 대신 instr() — 와일드카드 해석이 없어 사용자 입력 그대로만 매치되고,
+    // 긴 검색어에서 D1 의 50바이트 패턴 한도에도 걸리지 않는다 (sqlContains 주석 참고).
     const matchClause = includeTitle
-        ? "(slug LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\')"
-        : "slug LIKE ? ESCAPE '\\'";
-    const binds = includeTitle ? [likePattern, likePattern] : [likePattern];
+        ? `(${sqlContains('slug')} OR ${sqlContains('title')})`
+        : sqlContains('slug');
+    const binds = includeTitle ? [q, q] : [q];
 
     const { results } = await db
         .prepare(
@@ -1547,8 +1546,8 @@ adminRoutes.get('/media', async (c) => {
     const where: string[] = [];
     const filenameParams: any[] = [];
     if (search) {
-        where.push('m.filename LIKE ?');
-        filenameParams.push(`%${search}%`);
+        where.push(sqlContains('m.filename'));
+        filenameParams.push(search);
     }
     const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
 
@@ -2016,8 +2015,8 @@ adminRoutes.get('/logs', async (c) => {
     const conditions: string[] = [];
 
     if (search) {
-        conditions.push(`(u.name LIKE ? OR al.log LIKE ?)`);
-        params.push(`%${search}%`, `%${search}%`);
+        conditions.push(`(${sqlContains('u.name')} OR ${sqlContains('al.log')})`);
+        params.push(search, search);
     }
     if (type !== 'all') {
         conditions.push(`al.type = ?`);
@@ -2055,8 +2054,8 @@ adminRoutes.get('/pages/deleted', async (c) => {
     const conditions: string[] = ['deleted_at IS NOT NULL'];
     const params: any[] = [];
     if (search) {
-        conditions.push('slug LIKE ?');
-        params.push(`%${search}%`);
+        conditions.push(sqlContains('slug'));
+        params.push(search);
     }
     const whereClause = ' WHERE ' + conditions.join(' AND ');
 
@@ -2093,10 +2092,6 @@ function normalizeCategoryString(s: string): string {
         .filter(c => c.length > 0)
         .filter((v, i, a) => a.indexOf(v) === i)
         .join(',');
-}
-
-function escapeLike(s: string): string {
-    return s.replace(/[\\%_]/g, ch => '\\' + ch);
 }
 
 /**
@@ -2146,40 +2141,37 @@ const SCAN_ALLOWED_COLUMNS = new Set([
 ]);
 
 /**
- * prefix/% 패턴으로 하위 문서를 스캔. LIKE 50바이트 한도 검사 + JS startsWith
- * case-sensitive 후처리로 mergeCategoriesFromRules 와 동일한 일관성 보장.
+ * `prefix/**` 하위 문서를 스캔한다.
  * `columns` 는 SCAN_ALLOWED_COLUMNS 화이트리스트 안의 식별자만 허용한다.
- * 정상이면 { pages: T[] } 를, 한도 초과면 { error } 를 반환.
+ *
+ * prefix 범위 비교를 쓰므로 LIKE 의 D1 50바이트 패턴 한도에 걸리지 않는다(예전에는 한글
+ * 17자 남짓만 넘어도 "prefix 가 너무 깁니다" 로 거절됐다). 비교가 BINARY case-sensitive 라
+ * mergeCategoriesFromRules 의 JS startsWith 와도 동일한 판정이 되어 후처리 필터가 필요 없다.
+ * 상세 근거는 subtreeSlugRange 주석 참고.
  */
 async function scanPrefixSubpages<T extends { slug: string }>(
     db: D1Database,
     prefix: string,
     columns: readonly string[]
-): Promise<{ pages: T[] } | { error: string }> {
+): Promise<T[]> {
     for (const col of columns) {
         if (!SCAN_ALLOWED_COLUMNS.has(col)) {
             throw new Error(`scanPrefixSubpages: disallowed column '${col}'`);
         }
     }
-    const likePattern = escapeLike(prefix) + '/%';
-    // Cloudflare D1 의 LIKE/GLOB 패턴은 50바이트 제한 (UTF-8 한글 3바이트 → 17자만 되어도 초과).
-    const patternBytes = new TextEncoder().encode(likePattern).length;
-    if (patternBytes > 50) {
-        return { error: `prefix 가 너무 깁니다 (LIKE 패턴 ${patternBytes}바이트, 한도 50바이트). 더 짧은 prefix 로 시도하거나, 자동 규칙으로만 저장해주세요.` };
-    }
+    const range = subtreeSlugRange(prefix);
+    if (!range) return [];
     const selectList = columns.join(', ');
     const { results } = await db
         .prepare(
             `SELECT ${selectList} FROM pages
              WHERE deleted_at IS NULL
-               AND slug LIKE ? ESCAPE '\\'
+               AND slug > ? AND slug < ?
              ORDER BY slug ASC`
         )
-        .bind(likePattern)
+        .bind(range.lower, range.upper)
         .all<T>();
-    // SQLite LIKE 는 ASCII case-insensitive — JS startsWith 로 한 번 더 거른다.
-    const prefixWithSlash = prefix + '/';
-    return { pages: results.filter(p => p.slug.startsWith(prefixWithSlash)) };
+    return results;
 }
 
 const CATEGORY_SCAN_COLUMNS = ['id', 'slug', 'category'] as const;
@@ -2292,17 +2284,16 @@ adminRoutes.get('/category-prefix-rules/subpages', async (c) => {
     if ('error' in prefixCheck) return c.json({ error: prefixCheck.error }, 400);
     const { prefix } = prefixCheck;
 
-    const scan = await scanCategorySubpages(db, prefix);
-    if ('error' in scan) return c.json({ error: scan.error }, 400);
+    const pages = await scanCategorySubpages(db, prefix);
 
-    if (scan.pages.length > CATEGORY_SUBPAGES_MAX) {
+    if (pages.length > CATEGORY_SUBPAGES_MAX) {
         return c.json({
-            error: `하위 문서가 너무 많아 일괄 모달에서 다룰 수 없습니다 (${scan.pages.length}건, 한도 ${CATEGORY_SUBPAGES_MAX}). 더 깊은 prefix 로 분할해주세요.`,
+            error: `하위 문서가 너무 많아 일괄 모달에서 다룰 수 없습니다 (${pages.length}건, 한도 ${CATEGORY_SUBPAGES_MAX}). 더 깊은 prefix 로 분할해주세요.`,
         }, 400);
     }
 
     const prefixDepth = prefix.split('/').length;
-    const items = scan.pages.map(p => ({
+    const items = pages.map(p => ({
         id: p.id,
         slug: p.slug,
         depth: p.slug.split('/').length - prefixDepth - 1,
@@ -2372,10 +2363,9 @@ adminRoutes.post('/category-prefix-rules/bulk-apply', async (c) => {
     const removeUpdates: { id: number; slug: string; newCategory: string }[] = [];
 
     if (addIdsIn.length > 0 || removeIdsIn.length > 0) {
-        const scan = await scanCategorySubpages(db, prefix);
-        if ('error' in scan) return c.json({ error: scan.error }, 400);
-        scanned = scan.pages.length;
-        const idToPage = new Map(scan.pages.map(p => [p.id, p]));
+        const pages = await scanCategorySubpages(db, prefix);
+        scanned = pages.length;
+        const idToPage = new Map(pages.map(p => [p.id, p]));
 
         const addSet = new Set(addIdsIn.filter(id => idToPage.has(id)));
         const removeSet = new Set(removeIdsIn.filter(id => idToPage.has(id)));
@@ -2639,17 +2629,16 @@ adminRoutes.get('/doc-setting-prefix-rules/subpages', async (c) => {
     if ('error' in prefixCheck) return c.json({ error: prefixCheck.error }, 400);
     const { prefix } = prefixCheck;
 
-    const scan = await scanPrefixSubpages<LockPrivateRow>(db, prefix, DOC_SETTING_SCAN_COLUMNS);
-    if ('error' in scan) return c.json({ error: scan.error }, 400);
+    const pages = await scanPrefixSubpages<LockPrivateRow>(db, prefix, DOC_SETTING_SCAN_COLUMNS);
 
-    if (scan.pages.length > CATEGORY_SUBPAGES_MAX) {
+    if (pages.length > CATEGORY_SUBPAGES_MAX) {
         return c.json({
-            error: `하위 문서가 너무 많아 일괄 모달에서 다룰 수 없습니다 (${scan.pages.length}건, 한도 ${CATEGORY_SUBPAGES_MAX}). 더 깊은 prefix 로 분할해주세요.`,
+            error: `하위 문서가 너무 많아 일괄 모달에서 다룰 수 없습니다 (${pages.length}건, 한도 ${CATEGORY_SUBPAGES_MAX}). 더 깊은 prefix 로 분할해주세요.`,
         }, 400);
     }
 
     const prefixDepth = prefix.split('/').length;
-    const items = scan.pages.map(p => ({
+    const items = pages.map(p => ({
         id: p.id,
         slug: p.slug,
         depth: p.slug.split('/').length - prefixDepth - 1,
@@ -2758,10 +2747,9 @@ adminRoutes.post('/doc-setting-prefix-rules/bulk-apply', async (c) => {
     const updates: { id: number; slug: string; newPriv: number; newAcl: string | null; catChanged: boolean; newCategory: string | null; curPriv: number; curAcl: string | null; privChanged: boolean; aclChanged: boolean }[] = [];
 
     if (idsIn.length > 0 && (privateAction !== 'none' || aclAction !== 'none' || categoriesAction !== 'none')) {
-        const scan = await scanPrefixSubpages<LockPrivateRow>(db, prefix, DOC_SETTING_SCAN_COLUMNS);
-        if ('error' in scan) return c.json({ error: scan.error }, 400);
-        scanned = scan.pages.length;
-        const idToPage = new Map(scan.pages.map(p => [p.id, p]));
+        const pages = await scanPrefixSubpages<LockPrivateRow>(db, prefix, DOC_SETTING_SCAN_COLUMNS);
+        scanned = pages.length;
+        const idToPage = new Map(pages.map(p => [p.id, p]));
         const targetPriv = actionToFlag(privateAction);
         const catRuleForMerge = categoriesAction === 'add' ? [{ prefix, categories: categoriesValue }] : null;
 

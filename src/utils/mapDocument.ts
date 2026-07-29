@@ -15,6 +15,7 @@
 
 import { parseEditAcl, type EditAclFlag } from './editAcl';
 import { stripCollapseToken } from './headingTokens';
+import { subtreeSlugRange } from './slug';
 
 export const MAP_TREE_LIMIT = 500;
 /**
@@ -189,8 +190,10 @@ async function buildTreeNodes(opts: BuildMapDocumentOptions): Promise<BuildTreeN
     const { db, baseSlug, canSeePrivate } = opts;
     const privateFilter = canSeePrivate ? '' : ' AND is_private = 0';
 
-    // LIKE 와일드카드(%, _, \) 이스케이프 — wiki.ts:/w/:slug/subdocs 와 동일한 규칙.
-    const escaped = baseSlug.replace(/[\\%_]/g, (ch) => '\\' + ch);
+    // prefix 범위 비교 — LIKE 는 D1 의 50바이트 패턴 한도에 걸려 긴(특히 한글) baseSlug 에서
+    // 쿼리가 통째로 실패한다. 상세 근거는 subtreeSlugRange 주석 참고.
+    // baseSlug 가 비어 있으면(위키 전체 맵) range 가 null 이라 범위 조건을 붙이지 않는다.
+    const range = subtreeSlugRange(baseSlug);
 
     const baseRowQuery = baseSlug
         ? db.prepare(
@@ -201,10 +204,10 @@ async function buildTreeNodes(opts: BuildMapDocumentOptions): Promise<BuildTreeN
     const childrenQuery = db.prepare(
         `SELECT slug, content, rows, characters, is_private, edit_acl FROM pages
          WHERE deleted_at IS NULL${privateFilter}
-           AND slug LIKE ? ESCAPE '\\'
+           ${range ? 'AND slug > ? AND slug < ?' : ''}
          ORDER BY slug ASC
          LIMIT ${MAP_TREE_LIMIT + 1}`
-    ).bind((baseSlug ? escaped + '/' : '') + '%');
+    ).bind(...(range ? [range.lower, range.upper] : []));
 
     const [baseRow, childrenRes] = await Promise.all([
         baseRowQuery ? baseRowQuery.first<PageRow>() : Promise.resolve(null),

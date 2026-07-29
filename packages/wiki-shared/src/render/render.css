@@ -404,6 +404,80 @@ html[data-theme="dark"] .wiki-content video:hover {
   color: inherit;
 }
 
+/* 블록 컴포넌트의 제목·라벨 표면 안에 있는 인라인 코드도 같은 이유로 색을 상속한다.
+   이 표면들은 고유한 색을 갖는다 — 콜아웃 헤더는 --callout-accent, 카드 헤더는
+   --wiki-text-muted, 그리고 카드/인포박스/플로트/일반 블록 제목은 {palette:}/{color:}
+   토큰이 있으면 인라인 style 로 색을 받는다. 상속은 우선순위가 없으므로 자식 code 의
+   클래스 규칙이 부모의 인라인 style 까지 이겨서, 코드 부분만 중립색으로 되돌아가
+   제목이 두 색으로 갈라진다(`:::tip `directPulse` 훅…` 이 대표 사례).
+   링크 안 코드(.wiki-content a code)와 동일한 정책. */
+.wiki-content .wiki-callout-header code,
+.wiki-content .wiki-card-header code,
+.wiki-content .wiki-infobox-title code,
+.wiki-content .wiki-float-title code,
+.wiki-content .wiki-embed-title code,
+.wiki-content .wiki-block-title code {
+  color: inherit;
+}
+
+/* 단, {palette:}/{color:} 로 "채워질 수 있는" 제목 표면에서는 색만 상속해선 안 된다.
+   code 는 자기 배경(--wiki-code-bg)을 유지하는데, 상속된 전경색은 그 배경이 아니라
+   팔레트 채움색 위에서 읽히도록 설계된 값이기 때문이다. {palette:primary} 헤더가
+   대표적이다 — 전경은 --wiki-btn-text = light-dark(#ffffff, #000000), 코드 배경은
+   --wiki-code-bg = light-dark(#f8fafc, #000000) 이라 라이트에서 흰 글자가 흰 배경에,
+   다크에서는 검정이 검정 위에 얹혀 사실상 읽을 수 없다(모든 스킨 공통).
+   그래서 채움이 있을 때는 코드 배경을 걷어내 칩이 채움색 위에 그대로 얹히게 한다.
+   이러면 칩의 대비가 헤더 텍스트 자신의 대비와 정확히 같아져, 이 규칙이 어떤 스킨·팔레트
+   조합에서도 대비를 떨어뜨리지 않는다(배경에 currentColor 틴트를 깔면 보기에는 칩 같지만
+   5개 스킨 × 라이트/다크 × 빌트인 팔레트 70조합 중 25개가 AA 아래로 내려간다 — 칩 모양은
+   테두리만으로 충분하므로 틴트는 쓰지 않는다).
+   선택자에 [style] 을 두어 실제로 색이 칠해진 제목에만 적용한다. 채움이 없는 평범한
+   제목은 본문 코드와 같은 기본 코드 칩을 유지해야 시각적으로 일관된다.
+
+   단 채움이 반드시 제목 자신에 붙지는 않는다. .wiki-card-header 는 자체 color 를 가져
+   (.wiki-card.card > .wiki-card-header.card-header) 조상 채움을 물려받지 않으므로 자신의
+   [style] 로 판정하면 정확하다. 반면 .wiki-float-title / .wiki-infobox-title /
+   .wiki-block-title 은 자체 color 가 없어 조상에서 색을 물려받는다 — 예컨대 팔레트로
+   채운 :::float 안의 :::infobox 제목은 style 이 부모 <aside> 에만 붙는다. 그래서 이
+   셋은 "조상 아무 곳에나 인라인 style 이 있으면" 으로 넓게 잡는다. 특정 래퍼 클래스와
+   짝지으면 중첩 조합마다 구멍이 생기고, 그 구멍은 곧 판독 불가로 이어진다.
+   넓게 잡아 생기는 오탐(색과 무관한 인라인 style, 예: {template:} 의 grid-template-
+   columns)은 칩이 코드 배경을 잃는 시각적 차이일 뿐 대비는 제목 텍스트와 같아 안전하다.
+   즉 이 선택자는 "안 보이는 코드" 대신 "가끔 밋밋한 칩" 쪽으로 실패하도록 되어 있다.
+
+   링크·컨트롤 라벨(--wiki-primary/--wiki-text-muted/--callout-accent)은 페이지 배경
+   기준으로 설계된 색이라 --wiki-code-bg 와 짝지어도 안전해 이 처리가 필요 없다. */
+/* [style=""] 은 제외한다. Bootstrap Collapse 가 전환을 끝내며 height 를 '' 로 되돌리면
+   빈 style 속성이 요소에 남는데(아코디언 토글, 그리고 [[문서#앵커]] 딥링크가 부르는
+   _expandAncestorsForScroll 의 Collapse.show()), 이를 채움으로 오인하면 사용자가 항목을
+   펼친 뒤부터 그 안의 제목 코드 칩이 배경을 잃는다. 렌더 결과가 상호작용 전후로 달라지는
+   것은 스타일 선택이 아니라 결함으로 읽히므로, 오탐 허용 범위에서 이 경우만 뺀다. */
+.wiki-content .wiki-card-header[style]:not([style=""]) code,
+.wiki-content .wiki-infobox-title[style]:not([style=""]) code,
+.wiki-content [style]:not([style=""]) .wiki-float-title code,
+.wiki-content [style]:not([style=""]) .wiki-infobox-title code,
+.wiki-content [style]:not([style=""]) .wiki-block-title code {
+  background: transparent;
+  border-color: currentColor;
+  /* 틴트를 뺐으므로 테두리가 유일한 칩 어포던스다 — 45% 는 채도 높은 채움색 위에서
+     최대 2.96:1 로 흐릿해 60% 로 올린다. 테두리 색은 텍스트/배경 쌍에 관여하지 않아
+     가독성 비용이 0 이다. */
+  border-color: color-mix(in srgb, currentColor 60%, transparent);
+}
+
+/* 컨트롤 라벨(탭 / 아코디언 헤더 / 스텝 제목 / 펼치기 요약)도 마찬가지다. 이쪽은
+   상태에 따라 색이 바뀌므로(활성 탭·열린 항목·현재 단계는 --wiki-primary) 상태
+   신호가 갈라진다. 한 줄 컨트롤이라 여백을 줄이고 break-all 을 해제해 탭 스트립
+   높이가 흔들리지 않게 한다. */
+.wiki-content .wiki-tabs > .nav-tabs .nav-link code,
+.wiki-content .wiki-accordion .accordion-button code,
+.wiki-content .wiki-step-title code,
+.wiki-content .wiki-fold-summary code {
+  color: inherit;
+  padding: 0.1rem 0.3rem;
+  word-break: normal;
+}
+
 /* 큰 코드 블록 (Wrapper로 마진 이동) */
 .wiki-code-wrapper {
   position: relative;

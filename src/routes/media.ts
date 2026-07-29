@@ -5,6 +5,7 @@ import { fetchMediaTagMap, replaceMediaTags, sanitizeTags } from '../utils/media
 import { RBAC } from '../utils/role';
 import { safeJSON } from '../utils/json';
 import { invalidatePageCache } from '../utils/cacheInvalidation';
+import { sqlContains } from '../utils/sqlText';
 
 const media = new Hono<Env>();
 
@@ -188,8 +189,9 @@ media.get('/api/media/search', requireAuth, requirePermission('media:upload'), a
     const where: string[] = [`m.mime_type LIKE 'image/%'`];
     const params: any[] = [];
     if (search) {
-        where.push('m.filename LIKE ?');
-        params.push(`%${search}%`);
+        // LIKE 대신 instr() — 긴 검색어에서 D1 의 50바이트 패턴 한도에 걸리지 않는다 (sqlContains 주석).
+        where.push(sqlContains('m.filename'));
+        params.push(search);
     }
 
     let listSql: string;

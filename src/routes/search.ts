@@ -4,6 +4,7 @@ import { trackSearch } from '../utils/analytics';
 import { fetchMediaTagMap } from '../utils/mediaTags';
 import { isRagSearchEnabled, ragSearchBody } from '../utils/rag';
 import type { RBAC } from '../utils/role';
+import { sqlContains, sqlStartsWith } from '../utils/sqlText';
 
 // 이미지 검색 결과의 본문 미리보기 최대 길이.
 // 서버에서 본문을 이 길이로 절단하고 필요 시 '...'을 붙여 응답 크기를 제한한다.
@@ -175,29 +176,28 @@ search.get('/search', async (c) => {
         }
         const imageQuery = query.trim().substring('이미지:'.length).trim();
 
-        // filename 또는 content에 LIKE 매치
-        // LIKE 메타문자(%, _, \)를 escape 해 사용자가 입력한 문자열 그대로만 매치한다(와일드카드 주입 방지).
-        const imageLikeEscaped = imageQuery.replace(/[\\%_]/g, '\\$&');
-        const likePattern = imageQuery.length > 0 ? `%${imageLikeEscaped}%` : '%';
-
+        // filename 또는 content에 부분 매치.
+        // instr() 를 쓰므로 와일드카드 주입 위험이 없어 이스케이프가 필요 없고, 긴 검색어에서
+        // D1 의 LIKE 50바이트 한도에 걸리지도 않는다 (sqlContains 주석 참고).
+        // 빈 검색어는 instr(x, '') = 1 이라 기존 `LIKE '%'` 와 동일하게 전체 매치된다.
         const totalRow = await db
-            .prepare("SELECT COUNT(*) as total FROM media WHERE filename LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\'")
-            .bind(likePattern, likePattern)
+            .prepare(`SELECT COUNT(*) as total FROM media WHERE ${sqlContains('filename')} OR ${sqlContains('content')}`)
+            .bind(imageQuery, imageQuery)
             .first<{ total: number }>();
         const total = totalRow?.total ?? 0;
 
         if (total > 0) {
             const { page, offset } = clampPage(total);
-            // 파일명 LIKE 매치를 content 매치보다 우선하기 위해 정렬 키에 CASE를 추가한다.
+            // 파일명 매치를 content 매치보다 우선하기 위해 정렬 키에 CASE를 추가한다.
             const { results } = await db
                 .prepare(
                     `SELECT id, r2_key, filename, mime_type, content
                      FROM media
-                     WHERE filename LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\'
-                     ORDER BY (CASE WHEN filename LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END), created_at DESC
+                     WHERE ${sqlContains('filename')} OR ${sqlContains('content')}
+                     ORDER BY (CASE WHEN ${sqlContains('filename')} THEN 0 ELSE 1 END), created_at DESC
                      LIMIT ? OFFSET ?`
                 )
-                .bind(likePattern, likePattern, likePattern, PAGE_SIZE, offset)
+                .bind(imageQuery, imageQuery, imageQuery, PAGE_SIZE, offset)
                 .all<{ id: number; r2_key: string; filename: string; mime_type: string; content: string }>();
 
             const tagMap = await fetchMediaTagMap(db, results.map(r => r.id));
@@ -251,10 +251,6 @@ search.get('/search', async (c) => {
             return c.json({ error: '로그인이 필요합니다.' }, 401);
         }
         const catQuery = query.trim().substring('카테고리:'.length).trim();
-        // LIKE 메타문자 escape — 사용자가 입력한 문자열 그대로만 매치한다.
-        const likeEscaped = catQuery.replace(/[\\%_]/g, '\\$&');
-        const likePattern = catQuery.length > 0 ? `%${likeEscaped}%` : '%';
-        const startPattern = catQuery.length > 0 ? `${likeEscaped}%` : '%';
 
         // page_categories 의 카테고리는 pages 와 join 해 사용자 권한에 맞는 가시 문서만 카운트.
         const visibility = (isAdmin ? '' : ' AND p.deleted_at IS NULL') + (canSeePrivate ? '' : ' AND p.is_private = 0');
@@ -264,9 +260,9 @@ search.get('/search', async (c) => {
                 `SELECT COUNT(DISTINCT pc.category) as total
                  FROM page_categories pc
                  JOIN pages p ON p.id = pc.page_id
-                 WHERE pc.category LIKE ? ESCAPE '\\'${visibility}`
+                 WHERE ${sqlContains('pc.category')}${visibility}`
             )
-            .bind(likePattern)
+            .bind(catQuery)
             .first<{ total: number }>();
         const total = totalRow?.total ?? 0;
 
@@ -277,14 +273,14 @@ search.get('/search', async (c) => {
                 SELECT pc.category AS name, COUNT(DISTINCT pc.page_id) AS page_count
                 FROM page_categories pc
                 JOIN pages p ON p.id = pc.page_id
-                WHERE pc.category LIKE ? ESCAPE '\\'${visibility}
+                WHERE ${sqlContains('pc.category')}${visibility}
                 GROUP BY pc.category
-                ORDER BY (CASE WHEN pc.category LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END), pc.category
+                ORDER BY (CASE WHEN ${sqlStartsWith('pc.category')} THEN 0 ELSE 1 END), pc.category
                 LIMIT ? OFFSET ?
             `;
             const results = await db
                 .prepare(sql)
-                .bind(likePattern, startPattern, PAGE_SIZE, offset)
+                .bind(catQuery, catQuery, PAGE_SIZE, offset)
                 .all<{ name: string; page_count: number }>();
 
             // 페이지된 카테고리에 대해 설명 문서('카테고리:이름' 페이지) 존재 여부 일괄 조회.
@@ -374,23 +370,22 @@ search.get('/search', async (c) => {
     // field 에 따라 매칭 컬럼(슬러그·제목·본문)을 좁히고, sort/카테고리/날짜/비공개 필터를 함께 반영한다.
     const runLikeSearch = async () => {
         const visibility = (isAdmin ? '' : ' AND deleted_at IS NULL') + (effectiveSeePrivate ? '' : ' AND is_private = 0');
-        // LIKE 메타문자(%, _, \)를 escape 해 사용자가 입력한 문자열 그대로만 매치한다.
-        const likeEscaped = trimmedQuery.replace(/[\\%_]/g, '\\$&');
-        const likePattern = `%${likeEscaped}%`;
+        // instr() 기반 부분 매치 — 긴 검색어에서 D1 의 LIKE 50바이트 한도에 걸리지 않는다
+        // (sqlContains 주석 참고). 와일드카드 해석이 없어 이스케이프도 불필요하다.
         const extra = buildExtraFilters('');
 
         // field 별 매칭 컬럼 집합: title=슬러그/제목, body=본문, all=셋 다.
         let whereCols: string;
         const whereBinds: unknown[] = [];
         if (field === 'title') {
-            whereCols = `(slug LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\')`;
-            whereBinds.push(likePattern, likePattern);
+            whereCols = `(${sqlContains('slug')} OR ${sqlContains('title')})`;
+            whereBinds.push(trimmedQuery, trimmedQuery);
         } else if (field === 'body') {
-            whereCols = `(content LIKE ? ESCAPE '\\')`;
-            whereBinds.push(likePattern);
+            whereCols = `(${sqlContains('content')})`;
+            whereBinds.push(trimmedQuery);
         } else {
-            whereCols = `(slug LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\')`;
-            whereBinds.push(likePattern, likePattern, likePattern);
+            whereCols = `(${sqlContains('slug')} OR ${sqlContains('title')} OR ${sqlContains('content')})`;
+            whereBinds.push(trimmedQuery, trimmedQuery, trimmedQuery);
         }
         const whereSql = `WHERE ${whereCols}${visibility}${extra.sql}`;
 
@@ -411,10 +406,10 @@ search.get('/search', async (c) => {
             // 결과 카드는 표시 제목(title 우선, 없으면 slug)을 렌더하므로 동일 키로 정렬한다.
             orderSql = 'ORDER BY COALESCE(title, slug) ASC, slug ASC';
         } else {
-            orderSql = `ORDER BY (CASE WHEN slug LIKE ? ESCAPE '\\' THEN 0
-                          WHEN title LIKE ? ESCAPE '\\' THEN 1
+            orderSql = `ORDER BY (CASE WHEN ${sqlContains('slug')} THEN 0
+                          WHEN ${sqlContains('title')} THEN 1
                           ELSE 2 END), updated_at DESC, slug ASC`;
-            orderBinds.push(likePattern, likePattern);
+            orderBinds.push(trimmedQuery, trimmedQuery);
         }
 
         // 스니펫을 직접 만들기 위해 content도 함께 가져온다.
@@ -470,8 +465,6 @@ search.get('/search', async (c) => {
         // 아니다). 캡이 요청 정렬과 어긋나 1페이지 행이 누락되지 않도록, ORDER BY 를 sort 에 맞춰
         // 적용한 뒤 LIMIT 한다(이후 병합 집합을 같은 sort 로 한 번 더 재정렬).
         if (field === 'all') {
-            const likeEscaped = trimmedQuery.replace(/[\\%_]/g, '\\$&');
-            const likePattern = `%${likeEscaped}%`;
             let titleOrderSql: string;
             const titleOrderBinds: unknown[] = [];
             if (sort === 'recent') {
@@ -479,17 +472,17 @@ search.get('/search', async (c) => {
             } else if (sort === 'title') {
                 titleOrderSql = 'ORDER BY COALESCE(title, slug) ASC, slug ASC';
             } else {
-                titleOrderSql = `ORDER BY (CASE WHEN slug LIKE ? ESCAPE '\\' THEN 0
-                               WHEN title LIKE ? ESCAPE '\\' THEN 1 ELSE 2 END), updated_at DESC, slug ASC`;
-                titleOrderBinds.push(likePattern, likePattern);
+                titleOrderSql = `ORDER BY (CASE WHEN ${sqlContains('slug')} THEN 0
+                               WHEN ${sqlContains('title')} THEN 1 ELSE 2 END), updated_at DESC, slug ASC`;
+                titleOrderBinds.push(trimmedQuery, trimmedQuery);
             }
             const titleSql = `
                 SELECT slug, title, content, deleted_at, updated_at FROM pages
-                WHERE (slug LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\')${visibility}${extra.sql}
+                WHERE (${sqlContains('slug')} OR ${sqlContains('title')})${visibility}${extra.sql}
                 ${titleOrderSql}
                 LIMIT 50`;
             const titleRes = await db.prepare(titleSql)
-                .bind(likePattern, likePattern, ...extra.binds, ...titleOrderBinds)
+                .bind(trimmedQuery, trimmedQuery, ...extra.binds, ...titleOrderBinds)
                 .all<Row>();
             for (const r of titleRes.results) { pushSlug(r.slug); rowBySlug.set(r.slug, r); }
         }
@@ -581,23 +574,21 @@ search.get('/search', async (c) => {
         // Trigram 토크나이저에서는 따옴표로 감싸면 정확한 substring 매칭
         const safeMatchQuery = '"' + trimmedQuery.replace(/"/g, '""') + '"';
 
-        // 슬러그/title LIKE 패턴 (정렬 키 + title 보조 매칭용).
+        // 슬러그/title 부분 매치 (정렬 키 + title 보조 매칭용).
         // pages_fts 가 (slug, title, content) 3컬럼 trigram 인덱싱이므로 FTS MATCH 만으로도
         // title 매치가 포함되어야 하지만, 과거 스키마에서 마이그레이션된 인덱스에 title 컬럼이
-        // 누락된 경우에도 title 만 일치한 문서를 결과에 포함시키기 위해 OR p.title LIKE ? 를
-        // 명시적으로 추가한다. CLAUDE.md 규칙(검색 디스커버리는 title 도 LIKE 매칭 대상)에 일치.
-        // 사용자 입력 그대로만 매치되도록 LIKE 메타문자(%, _, \)를 escape 한 후 ESCAPE '\' 사용.
-        // (예: 검색어 "100%"가 모든 행에 매치되어 결과가 부풀려지는 현상 방지)
-        const likeEscaped = trimmedQuery.replace(/[\\%_]/g, '\\$&');
-        const likePattern = `%${likeEscaped}%`;
+        // 누락된 경우에도 title 만 일치한 문서를 결과에 포함시키기 위해 title 부분 매치를
+        // 명시적으로 OR 로 추가한다. CLAUDE.md 규칙(검색 디스커버리는 title 도 매칭 대상)에 일치.
+        // instr() 기반이라 검색어의 와일드카드가 해석되지 않고(예: "100%" 가 모든 행에 매치되는
+        // 현상 없음), 긴 검색어에서 D1 의 LIKE 50바이트 한도에도 걸리지 않는다.
         const extra = buildExtraFilters('p');
 
-        // field 별 WHERE: all=(FTS OR 제목 LIKE), body=(FTS AND 본문 LIKE).
+        // field 별 WHERE: all=(FTS OR 제목 매치), body=(FTS AND 본문 매치).
         // (field=title 은 위에서 LIKE 경로로 분기되어 여기 도달하지 않는다.)
-        // 두 경우 모두 FTS subquery 의 MATCH 바인드 1개 + 컬럼 LIKE 바인드 1개로 동일하다.
+        // 두 경우 모두 FTS subquery 의 MATCH 바인드 1개 + 컬럼 매치 바인드 1개로 동일하다.
         const whereCols = field === 'body'
-            ? `(fts.rowid IS NOT NULL AND p.content LIKE ? ESCAPE '\\')`
-            : `(fts.rowid IS NOT NULL OR p.title LIKE ? ESCAPE '\\')`;
+            ? `(fts.rowid IS NOT NULL AND ${sqlContains('p.content')})`
+            : `(fts.rowid IS NOT NULL OR ${sqlContains('p.title')})`;
         const whereSql = `WHERE ${whereCols}${visibility}${extra.sql}`;
 
         const totalRow = await db
@@ -608,7 +599,7 @@ search.get('/search', async (c) => {
                    ON fts.rowid = p.id
                  ${whereSql}`
             )
-            .bind(safeMatchQuery, likePattern, ...extra.binds)
+            .bind(safeMatchQuery, trimmedQuery, ...extra.binds)
             .first<{ total: number }>();
         const total = totalRow?.total ?? 0;
         const { page, offset } = clampPage(total);
@@ -625,12 +616,12 @@ search.get('/search', async (c) => {
             // 결과 카드는 표시 제목(title 우선, 없으면 slug)을 렌더하므로 동일 키로 정렬한다.
             orderSql = 'ORDER BY COALESCE(p.title, p.slug) ASC, p.slug ASC';
         } else {
-            orderSql = `ORDER BY (CASE WHEN p.slug LIKE ? ESCAPE '\\' THEN 0
-                          WHEN p.title LIKE ? ESCAPE '\\' THEN 1
+            orderSql = `ORDER BY (CASE WHEN ${sqlContains('p.slug')} THEN 0
+                          WHEN ${sqlContains('p.title')} THEN 1
                           ELSE 2 END),
                     CASE WHEN fts.rank IS NULL THEN 1 ELSE 0 END,
                     fts.rank, p.slug ASC`;
-            orderBinds.push(likePattern, likePattern);
+            orderBinds.push(trimmedQuery, trimmedQuery);
         }
 
         const sql = `
@@ -649,7 +640,7 @@ search.get('/search', async (c) => {
 
         const results = await db
             .prepare(sql)
-            .bind(safeMatchQuery, likePattern, ...extra.binds, ...orderBinds, PAGE_SIZE, offset)
+            .bind(safeMatchQuery, trimmedQuery, ...extra.binds, ...orderBinds, PAGE_SIZE, offset)
             .all<{ slug: string; title: string | null; content: string; deleted_at: number | null; rank: number | null }>();
 
         // 스니펫은 본문에서 리터럴 substring 위치를 찾아 직접 <mark> 를 단다(escape 포함).
@@ -700,23 +691,24 @@ search.get('/search/suggest', async (c) => {
     // 가상 문서를 일반 page 슬러그 기준으로만 매핑하므로, 카테고리가 7개 한도를 잠식하면 안 된다.)
     const excludeCategories = c.req.query('exclude_categories') === '1';
     const trimmed = query.trim();
-    const likePattern = `%${trimmed}%`;
-    const startPattern = `${trimmed}%`;
+
+    // instr() 기반 부분/접두사 매치 — 긴 입력에서 D1 의 LIKE 50바이트 한도에 걸리지 않고,
+    // 검색어에 포함된 `%`·`_` 가 와일드카드로 해석되지도 않는다 (sqlContains 주석 참고).
 
     // 1. 카테고리 검색 (exclude_categories=1 이면 건너뛴다)
     const catResults = excludeCategories
         ? { results: [] as Record<string, unknown>[] }
         : await db.prepare(`
             SELECT DISTINCT category FROM page_categories
-            WHERE category LIKE ?
-            ORDER BY CASE WHEN category LIKE ? THEN 0 ELSE 1 END, length(category)
+            WHERE ${sqlContains('category')}
+            ORDER BY CASE WHEN ${sqlStartsWith('category')} THEN 0 ELSE 1 END, length(category)
             LIMIT 7
-        `).bind(likePattern, startPattern).all();
+        `).bind(trimmed, trimmed).all();
 
     // 2. 문서 검색 — slug 와 대체 title 양쪽에서 매칭. 호출용 식별자는 항상 slug, title 은 표시용.
     let pageSql = `
         SELECT slug, title FROM pages
-        WHERE (slug LIKE ? OR title LIKE ?)
+        WHERE (${sqlContains('slug')} OR ${sqlContains('title')})
     `;
     if (!isAdmin) {
         pageSql += ' AND deleted_at IS NULL';
@@ -724,13 +716,13 @@ search.get('/search/suggest', async (c) => {
     if (!canSeePrivate) {
         pageSql += ' AND is_private = 0';
     }
-    pageSql += ` ORDER BY (CASE WHEN slug LIKE ? THEN 0
-                                WHEN title LIKE ? THEN 1
+    pageSql += ` ORDER BY (CASE WHEN ${sqlStartsWith('slug')} THEN 0
+                                WHEN ${sqlStartsWith('title')} THEN 1
                                 ELSE 2 END),
                           length(slug) LIMIT 7`;
 
     const pageResults = await db.prepare(pageSql)
-        .bind(likePattern, likePattern, startPattern, startPattern)
+        .bind(trimmed, trimmed, trimmed, trimmed)
         .all<{ slug: string; title: string | null }>();
 
     const suggestions: { slug: string; title?: string | null }[] = [];

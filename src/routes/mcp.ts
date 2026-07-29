@@ -3,7 +3,7 @@ import { cors } from 'hono/cors';
 import type { Env, User } from '../types';
 import { RBAC } from '../utils/role';
 import { renderForAI, extractTOC, extractSection, expandTemplates } from '../utils/aiParser';
-import { normalizeSlug, isR2OnlyNamespace, isMcpReadableSlug } from '../utils/slug';
+import { normalizeSlug, isR2OnlyNamespace, isMcpReadableSlug, subtreeSlugRange } from '../utils/slug';
 import { getEnabledExtensions } from '../utils/extensions';
 import { getRevisionContent } from '../utils/r2';
 import { resolveBearerAuth } from '../utils/mcpAuth';
@@ -272,13 +272,9 @@ async function handleJsonRpc(c: Context<Env>, body: any, user: User | null) {
                     }
                     pageNum = Math.max(1, Math.floor(Number(args.page) || 1));
                     const offset = (pageNum - 1) * BATCH_LIMIT;
-                    // D1 의 LIKE 패턴은 50바이트 한도가 있어 긴 슬러그에서 쿼리가 실패할 수 있다.
-                    // 대신 prefix 범위 비교(slug > 'parent/' AND slug < 'parent0')로 하위 문서를 찾는다.
-                    // '/' (0x2F) 의 바로 다음 코드포인트가 '0' (0x30) 이므로 'parent/' 로 시작하는 모든
-                    // 슬러그는 ['parent/', 'parent0') 범위에 정확히 들어간다. UTF-8 의 codepoint 순서가
-                    // 바이트 사전순과 일치해 비-ASCII 슬러그에서도 안전하다.
-                    const prefixLower = parentSlug + '/';
-                    const prefixUpper = parentSlug + '0';
+                    // LIKE 대신 prefix 범위 비교 — 근거는 subtreeSlugRange 주석 참고.
+                    // parentSlug 는 위에서 비어 있지 않음이 보장되므로 range 는 항상 non-null.
+                    const { lower: prefixLower, upper: prefixUpper } = subtreeSlugRange(parentSlug)!;
 
                     // total 은 트리 표시용 캡(500)과 무관하게 COUNT(*) 로 정확히 구해야 한다.
                     // 그렇지 않으면 500을 초과한 시점부터 has_next_page 가 거짓이 되어

@@ -9,7 +9,8 @@
 import type { Context } from 'hono';
 import type { Env } from '../types';
 import { renderForAI, extractTOC, extractSection, findSectionsForQuery, expandTemplates } from './aiParser';
-import { normalizeSlug, isR2OnlyNamespace, isMcpReadableSlug } from './slug';
+import { normalizeSlug, isR2OnlyNamespace, isMcpReadableSlug, subtreeSlugRange } from './slug';
+import { sqlContains, sqlStartsWith } from './sqlText';
 import { getEnabledExtensions } from './extensions';
 import { getRevisionContent } from './r2';
 import { isRagSearchEnabled, ragSearchBody } from './rag';
@@ -301,12 +302,13 @@ export async function dispatchReadTool(
     }
 
     if (toolName === 'search_title') {
-        // slug 와 대체 title 양쪽에서 LIKE 매칭. title 은 표시용이라 모든 호출 도구의 인자(title 파라미터) 는 slug 를 받지만,
+        // slug 와 대체 title 양쪽에서 부분 매칭. title 은 표시용이라 모든 호출 도구의 인자(title 파라미터) 는 slug 를 받지만,
         // 디스커버리 단계에서는 사용자가 기억하는 표시 이름(특수문자 포함) 으로도 검색이 가능해야 하므로 함께 매칭한다.
+        // LIKE 대신 instr() — 긴 질의에서 D1 의 50바이트 패턴 한도에 걸리지 않는다 (sqlContains 주석).
         const results = await db.prepare(
             `SELECT slug, title, rows, characters FROM pages
-             WHERE (slug LIKE ?1 OR title LIKE ?1) AND deleted_at IS NULL${privateFilter} LIMIT 15`,
-        ).bind(`%${args.query}%`).all();
+             WHERE (${sqlContains('slug')} OR ${sqlContains('title')}) AND deleted_at IS NULL${privateFilter} LIMIT 15`,
+        ).bind(String(args.query ?? ''), String(args.query ?? '')).all();
         return { content: [{ type: 'text', text: JSON.stringify(results.results, null, 2) }] };
     }
 
@@ -314,13 +316,19 @@ export async function dispatchReadTool(
         const rawQuery = String(args.query || '').trim();
         if (!rawQuery) return { content: [{ type: 'text', text: '[]' }] };
 
-        let rows: { slug: string; content: string; last_revision_id: number | null; rows: number | null; characters: number | null }[] = [];
+        type FtsRow = { slug: string; content: string; last_revision_id: number | null; rows: number | null; characters: number | null };
+        // 트라이그램 미스(<3자) 와 FTS5 파싱 오류 양쪽에서 쓰는 공용 폴백.
+        // LIKE 대신 instr() — 긴 질의에서 D1 의 50바이트 패턴 한도에 걸리지 않고, 질의에 포함된
+        // 와일드카드가 해석되지도 않는다 (sqlContains 주석 참고).
+        const runFallback = async (): Promise<FtsRow[]> => {
+            const fbSql = `SELECT p.slug, p.content, p.last_revision_id, p.rows, p.characters FROM pages p WHERE (${sqlContains('p.slug')} OR ${sqlContains('p.content')}) AND p.deleted_at IS NULL${pPrivateFilter} ORDER BY (CASE WHEN ${sqlContains('p.slug')} THEN 0 ELSE 1 END), p.updated_at DESC LIMIT 10`;
+            const fbRes = await db.prepare(fbSql).bind(rawQuery, rawQuery, rawQuery).all<FtsRow>();
+            return fbRes.results;
+        };
+
+        let rows: FtsRow[] = [];
         if ([...rawQuery].length < 3) {
-            const likeEscaped = rawQuery.replace(/[\\%_]/g, '\\$&');
-            const likePattern = `%${likeEscaped}%`;
-            const fbSql = `SELECT p.slug, p.content, p.last_revision_id, p.rows, p.characters FROM pages p WHERE (p.slug LIKE ? ESCAPE '\\' OR p.content LIKE ? ESCAPE '\\') AND p.deleted_at IS NULL${pPrivateFilter} ORDER BY (CASE WHEN p.slug LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END), p.updated_at DESC LIMIT 10`;
-            const fbRes = await db.prepare(fbSql).bind(likePattern, likePattern, likePattern).all<{ slug: string; content: string; last_revision_id: number | null; rows: number | null; characters: number | null }>();
-            rows = fbRes.results;
+            rows = await runFallback();
         } else {
             const safeMatchQuery = '"' + rawQuery.replace(/"/g, '""') + '"';
             try {
@@ -329,16 +337,12 @@ export async function dispatchReadTool(
                                 WHERE id IN (SELECT rowid FROM pages_fts WHERE pages_fts MATCH ?)
                                   AND deleted_at IS NULL${privateFilter}
                                 LIMIT 10`;
-                const ftsRes = await db.prepare(ftsSql).bind(safeMatchQuery).all<{ slug: string; content: string; last_revision_id: number | null; rows: number | null; characters: number | null }>();
+                const ftsRes = await db.prepare(ftsSql).bind(safeMatchQuery).all<FtsRow>();
                 rows = ftsRes.results;
             } catch (ftsErr: any) {
                 const msg = String(ftsErr?.message || '');
                 if (!/fts5.*(syntax|parse)/i.test(msg)) throw ftsErr;
-                const likeEscaped = rawQuery.replace(/[\\%_]/g, '\\$&');
-                const likePattern = `%${likeEscaped}%`;
-                const fbSql = `SELECT p.slug, p.content, p.last_revision_id, p.rows, p.characters FROM pages p WHERE (p.slug LIKE ? ESCAPE '\\' OR p.content LIKE ? ESCAPE '\\') AND p.deleted_at IS NULL${pPrivateFilter} ORDER BY (CASE WHEN p.slug LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END), p.updated_at DESC LIMIT 10`;
-                const fbRes = await db.prepare(fbSql).bind(likePattern, likePattern, likePattern).all<{ slug: string; content: string; last_revision_id: number | null; rows: number | null; characters: number | null }>();
-                rows = fbRes.results;
+                rows = await runFallback();
             }
         }
 
@@ -447,8 +451,9 @@ export async function dispatchReadTool(
         if (!rootSlug) {
             return { content: [{ type: 'text', text: 'Error: title이 필요합니다.' }], isError: true };
         }
-        const prefixLower = rootSlug + '/';
-        const prefixUpper = rootSlug + '0';
+        // LIKE 대신 prefix 범위 비교 — 근거는 subtreeSlugRange 주석 참고.
+        // rootSlug 는 위에서 비어 있지 않음이 보장되므로 range 는 항상 non-null.
+        const { lower: prefixLower, upper: prefixUpper } = subtreeSlugRange(rootSlug)!;
 
         const [subdocs, rootPage] = await Promise.all([
             db.prepare(`SELECT slug, rows, characters FROM pages WHERE deleted_at IS NULL${privateFilter} AND slug > ? AND slug < ? ORDER BY slug ASC LIMIT 200`).bind(prefixLower, prefixUpper).all<{ slug: string; rows: number | null; characters: number | null }>(),
@@ -526,8 +531,8 @@ export async function dispatchReadTool(
     }
 
     if (toolName === 'search_category') {
-        const results = await db.prepare('SELECT DISTINCT category FROM page_categories WHERE category LIKE ? ORDER BY category ASC LIMIT 15')
-            .bind(`%${args.query}%`).all<{ category: string }>();
+        const results = await db.prepare(`SELECT DISTINCT category FROM page_categories WHERE ${sqlContains('category')} ORDER BY category ASC LIMIT 15`)
+            .bind(String(args.query ?? '')).all<{ category: string }>();
         return { content: [{ type: 'text', text: JSON.stringify(results.results.map(r => r.category), null, 2) }] };
     }
 
@@ -616,10 +621,10 @@ export async function dispatchReadTool(
             binds.push(args.author);
         }
         if (args.namespace && typeof args.namespace === 'string') {
-            // LIKE 패턴 안전화 — % 와 _ 를 이스케이프.
-            const ns = args.namespace.replace(/[\\%_]/g, '\\$&');
-            wheres.push("p.slug LIKE ? ESCAPE '\\'");
-            binds.push(`${ns}%`);
+            // LIKE 대신 instr() — 와일드카드 해석이 없어 이스케이프가 불필요하고,
+            // 긴 네임스페이스에서 D1 의 50바이트 패턴 한도에도 걸리지 않는다 (sqlStartsWith 주석).
+            wheres.push(sqlStartsWith('p.slug'));
+            binds.push(args.namespace);
         }
         if (args.category && typeof args.category === 'string') {
             wheres.push('p.id IN (SELECT page_id FROM page_categories WHERE category = ?)');
@@ -717,10 +722,9 @@ export async function dispatchReadTool(
         ).bind(filename).first<{ r2_key: string; filename: string; mime_type: string; size: number }>();
 
         if (!row) {
-            const escapedFilename = filename.replace(/[\\%_]/g, '\\$&');
             const matches = await db.prepare(
-                `SELECT r2_key, filename, mime_type, size FROM media WHERE filename LIKE ? ESCAPE '\\' AND mime_type LIKE 'image/%' ORDER BY filename ASC LIMIT 10`
-            ).bind(`%${escapedFilename}%`).all<{ r2_key: string; filename: string; mime_type: string; size: number }>();
+                `SELECT r2_key, filename, mime_type, size FROM media WHERE ${sqlContains('filename')} AND mime_type LIKE 'image/%' ORDER BY filename ASC LIMIT 10`
+            ).bind(filename).all<{ r2_key: string; filename: string; mime_type: string; size: number }>();
 
             if (matches.results.length === 0) {
                 return { content: [{ type: 'text', text: `Error: '${filename}' 와 일치하는 이미지를 찾을 수 없습니다.` }], isError: true };
