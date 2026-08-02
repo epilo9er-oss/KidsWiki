@@ -1273,9 +1273,24 @@
             const listEl = document.getElementById('mcpClientsList');
             if (!section || !listEl) return;
 
-            // 위키 MCP 엔드포인트 URL 세팅 (origin + /api/mcp)
+            // 위키 MCP 엔드포인트 URL 및 API 키 JSON 스니펫 세팅 (origin + /api/mcp)
             const wikiEndpointEl = document.getElementById('wikiMcpEndpointUrl');
             if (wikiEndpointEl) wikiEndpointEl.textContent = window.location.origin + '/api/mcp';
+
+            const jsonSnippetEl = document.getElementById('mcpApiKeyJsonSnippet');
+            if (jsonSnippetEl) {
+                const endpoint = window.location.origin + '/api/mcp';
+                jsonSnippetEl.textContent = JSON.stringify({
+                    mcpServers: {
+                        cloudwiki: {
+                            url: endpoint,
+                            headers: {
+                                Authorization: "Bearer YOUR_API_KEY"
+                            }
+                        }
+                    }
+                }, null, 2);
+            }
 
             try {
                 const res = await fetch('/api/me/mcp-clients');
@@ -1351,6 +1366,15 @@
         function copyWikiMcpEndpoint() {
             const url = (document.getElementById('wikiMcpEndpointUrl') as HTMLElement)?.textContent || '';
             navigator.clipboard.writeText(url).then(() => {
+                Swal.fire({ icon: 'success', title: '복사됨', toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
+            }).catch(() => {
+                Swal.fire({ icon: 'error', title: '복사 실패', toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
+            });
+        }
+
+        function copyMcpApiKeyJsonSnippet() {
+            const text = (document.getElementById('mcpApiKeyJsonSnippet') as HTMLElement)?.textContent || '';
+            navigator.clipboard.writeText(text).then(() => {
                 Swal.fire({ icon: 'success', title: '복사됨', toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
             }).catch(() => {
                 Swal.fire({ icon: 'error', title: '복사 실패', toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
@@ -1821,3 +1845,4 @@ window.deleteAllNotificationsArchive = deleteAllNotificationsArchive;
 window.generateMcpApiKey = generateMcpApiKey;
 window.deleteMcpApiKey = deleteMcpApiKey;
 window.copyWikiMcpEndpoint = copyWikiMcpEndpoint;
+window.copyMcpApiKeyJsonSnippet = copyMcpApiKeyJsonSnippet;
