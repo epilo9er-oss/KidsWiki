@@ -47,6 +47,8 @@ dataset = "" # 원하는 이름으로 수정
 # === 관리자 잡 러너 Durable Object ===
 # AdminJobDO: 최고 관리자 전용 싱글턴 잡 러너 (역링크 전수 재인덱싱 / 대량 이동 / 대량 삭제).
 # SQLite-backed(new_sqlite_classes) 라 Workers 프리 티어에서도 동작한다. 블록 그대로 사용.
+# 주의: DO 를 구현하는 Worker 에는 Cloudflare 가 프리뷰 URL 을 만들어 주지 않는다.
+# 브랜치 프리뷰는 이 블록을 걷어낸 별도 Worker 로 올린다 → docs/branch-preview.md
 [[durable_objects.bindings]]
 name = "ADMIN_JOB_DO"
 class_name = "AdminJobDO"

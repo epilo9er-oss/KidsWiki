@@ -1,10 +1,15 @@
 ---
-// 문서 조회 화면 공유 플로팅 도구(목차 패널 + 스크롤 FAB). 전역 위키(index.astro)와
-// 워크스페이스(ws-doc.astro) 셸이 동일 마커(#tocFloatingPanel·#tocFloatingNav·
-// #scrollFabGroup·#tocFabBtn·읽기/Raw 종료 FAB)를 공유하므로 하나의 컴포넌트로 둔다.
+// 문서 조회 화면 플로팅 도구(목차 레일 + 목차 패널 + 스크롤 FAB). 현재 사용처는 전역 위키
+// 셸(index.astro) 하나다 — 워크스페이스는 cloudspace 로 이관됐다. 고정 DOM 마커
+// (#tocScrollRail·#tocFloatingPanel·#tocFloatingNav·#scrollFabGroup·#tocFabBtn·읽기/Raw 종료 FAB)를
+// 한곳에 모아 두려고 컴포넌트로 분리했다.
 // 동작은 src/client/article/toc.ts(TocController)가 제어한다. 마크업은 손으로 쓴 HTML 과
 // 동일 결과(빌드 타임 인라인).
 ---
+<!-- 우측 스크롤바 옆 목차 레일(PC 전용, 점 → 호버 시 카드). 내용은 TocController 가 채운다.
+     목차 패널·사이드바와 동일 목차를 포인터 전용으로 중복 제공하므로 aria-hidden 이다. -->
+<div class="toc-rail" id="tocScrollRail" aria-hidden="true"></div>
+
 <!-- 플로팅 목차 패널 -->
 <div class="toc-floating-panel" id="tocFloatingPanel">
   <div class="toc-floating-header">

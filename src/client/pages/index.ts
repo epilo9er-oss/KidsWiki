@@ -1184,6 +1184,8 @@ import { createTocController } from '../article/toc';
         // d-none 을 다시 부여하므로 그 전에 sync 해도 즉시 덮어써진다.
         syncSidebarsForLayout();
         if (typeof window.__sidebarLayoutUpdate === 'function') window.__sidebarLayoutUpdate();
+        // 우측 스크롤바 목차 레일도 새 문서 헤딩으로 재구축(#articlePage 노출 이후여야 좌표가 잡힌다).
+        wikiToc.syncRail();
 
         // 캐시된 오래된 본문을 보고 있는지 1회 확인 (경량 version 엔드포인트와 대조)
         checkStaleVersion(page);
@@ -1593,6 +1595,8 @@ import { createTocController } from '../article/toc';
       // 사이드바 동기화는 hideAllPages 이후 (hideAllPages 가 레이아웃 사이드바에 d-none 재부여하므로)
       syncSidebarsForLayout();
       if (typeof window.__sidebarLayoutUpdate === 'function') window.__sidebarLayoutUpdate();
+      // 미작성 문서는 헤딩이 없으므로 레일도 비워진다(이전 문서 잔재 제거).
+      wikiToc.syncRail();
 
       // "아직 작성되지 않은 문서입니다" 안내 배너 (MCP/토론 알림과 동일한 카드형, 만들기 액션).
       // hideAllPages 가 #missingDocBanner 를 숨기므로 그 이후에 렌더한다.

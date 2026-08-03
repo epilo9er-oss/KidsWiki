@@ -58,6 +58,9 @@ packages/*/node_modules
 .dev.vars
 .env
 
+# 브랜치 프리뷰 전용 Worker 설정 (scripts/make-preview-config.mjs 가 wrangler.toml 에서 생성)
+/wrangler.preview.toml
+
 # misc
 .DS_Store
 .env.local

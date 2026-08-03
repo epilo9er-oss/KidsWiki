@@ -206,6 +206,7 @@
   --wiki-z-sidebar: 1030;
   --wiki-z-navbar: 1040;
   --wiki-z-scroll-fab: 1040;
+  --wiki-z-toc-rail: 1041;
   --wiki-z-toc-float: 1049;
   --wiki-z-search-suggestions: 1050;
   --wiki-z-offcanvas-backdrop: 1055;
@@ -3057,6 +3058,173 @@ html[data-theme="dark"] .push-status-on {
 
 .scroll-fab:active {
   transform: scale(0.95);
+}
+
+/* ── 우측 스크롤바 목차 레일 (PC 전용) ──
+   본문 헤딩 하나당 점 하나를 문서 내 위치 비율대로 스크롤바 옆에 배치한다. 호버하면 점이
+   좌측으로 펼쳐지며 목차 제목 카드가 되고, 클릭하면 FAB 목차와 동일하게 해당 헤딩으로 스크롤.
+   상/하 inset 은 src/client/article/toc.ts 의 RAIL_TOP_INSET·RAIL_BOTTOM_INSET 과 맞춘다
+   (점 좌표를 JS 가 이 범위 안에서 계산하므로 값이 어긋나면 배치가 밀린다).
+   컨테이너는 pointer-events:none — 뷰포트 우측 끝을 가로지르므로 본문·스크롤바 조작을 막지 않는다. */
+.toc-rail {
+  position: fixed;
+  right: 0;
+  top: 72px;
+  bottom: 152px;
+  width: 0;
+  /* 스크롤 FAB 그룹(--wiki-z-scroll-fab 1040) 바로 위 — 하단 점의 확장 카드가 FAB 에 가려지지
+     않도록. 접힌 점은 FAB 과 가로로 겹치지 않으므로 FAB 조작을 막지 않고, 모달·오프캔버스·
+     플로팅 목차(1049 이상)보다는 아래라 그 레이어들을 뚫지 않는다. */
+  z-index: var(--wiki-z-toc-rail);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--wiki-dur-moderate) ease;
+}
+
+.toc-rail.visible {
+  opacity: 1;
+}
+
+/* 접힌 상태의 박스는 점보다 넉넉한 히트 영역이고, 실제 점은 ::after 가 그린다.
+   박스 높이(--toc-rail-hit-h)는 인접 점 간격과 같아야 한다 — 더 크면 박스가 겹쳐
+   뒤 형제가 앞 점의 원 위를 덮고, 가리킨 점과 열리는 카드가 어긋난다.
+   기본값은 toc.ts 의 RAIL_MIN_GAP 과 같은 22px 이고, 균등 분배 폴백처럼 간격이 더
+   좁아질 때 toc.ts 의 layoutRailPositions 가 실제 간격으로 낮춰 준다. */
+.toc-rail-dot {
+  --toc-rail-dot-size: 9px;
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 22px;
+  max-width: 22px;
+  height: var(--toc-rail-hit-h, 22px);
+  border: 1px solid transparent;
+  border-radius: var(--wiki-radius-lg);
+  background: transparent;
+  color: var(--wiki-text);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  pointer-events: auto;
+  /* overflow 는 여기가 아니라 .toc-rail-label 이 맡는다 — 히트 박스 높이가 가변(점 지름보다
+     작아질 수 있음)이라 여기서 자르면 ::after 원이 납작하게 깎인다. */
+  transition: max-width var(--wiki-dur-moderate) var(--wiki-ease),
+    height var(--wiki-dur-fast) var(--wiki-ease),
+    background var(--wiki-dur-fast) ease,
+    border-color var(--wiki-dur-fast) ease,
+    box-shadow var(--wiki-dur-fast) ease;
+}
+
+.toc-rail-lv3 {
+  --toc-rail-dot-size: 7px;
+}
+
+.toc-rail-lv4 {
+  --toc-rail-dot-size: 5px;
+}
+
+/* 그려지는 원의 지름은 실제 점 간격(--toc-rail-hit-h)을 넘지 않는다. 넘으면 ① 이웃 원끼리
+   겹쳐 하나의 막대처럼 읽히고 ② 히트 테스트에 참여하는 의사요소가 앞 점의 중심까지 덮어
+   호버가 엉킨다(레일 밀집 구간). 지름을 간격으로 묶으면 두 문제가 함께 닫힌다. */
+.toc-rail-dot::after {
+  --toc-rail-dot-draw: min(var(--toc-rail-dot-size), var(--toc-rail-hit-h, 22px));
+  content: '';
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  width: var(--toc-rail-dot-draw);
+  height: var(--toc-rail-dot-draw);
+  margin-top: calc(var(--toc-rail-dot-draw) / -2);
+  border-radius: var(--wiki-radius-full);
+  background: color-mix(in srgb, var(--wiki-text) 40%, transparent);
+  transition: background var(--wiki-dur-fast) ease, opacity var(--wiki-dur-fast) ease,
+    transform var(--wiki-dur-fast) var(--wiki-ease);
+}
+
+.toc-rail-dot:hover::after {
+  opacity: 0;
+}
+
+/* 스크롤스파이 활성 헤딩 — 점을 브랜드색으로 키워 현재 위치를 표시. */
+.toc-rail-dot.toc-active::after {
+  background: var(--wiki-primary);
+  transform: scale(1.35);
+}
+
+.toc-rail-dot:hover {
+  max-width: 300px;
+  /* 카드는 점 간격과 무관하게 읽을 수 있는 높이로 펼친다(형제 위로 올라오도록 z-index 부여). */
+  height: 24px;
+  z-index: 1;
+  background: var(--wiki-glass-bg);
+  backdrop-filter: var(--wiki-glass-blur);
+  -webkit-backdrop-filter: var(--wiki-glass-blur);
+  border-color: var(--wiki-border);
+  box-shadow: var(--wiki-shadow-md);
+}
+
+.toc-rail-label {
+  min-width: 0;
+  padding: 0 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--wiki-fs-base);
+  line-height: 1.2;
+  opacity: 0;
+  transition: opacity var(--wiki-dur-fast) ease;
+}
+
+.toc-rail-dot:hover .toc-rail-label {
+  opacity: 1;
+}
+
+.toc-rail-dot.toc-active .toc-rail-label {
+  color: var(--wiki-primary);
+  font-weight: 600;
+}
+
+.toc-rail-num {
+  color: var(--wiki-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Raw 보기에는 본문 헤딩이 없다(JS 도 레일을 비우지만 전환 순간 잔상을 막는다). */
+body.raw-mode .toc-rail {
+  display: none;
+}
+
+/* 태블릿/모바일과 포인터 호버가 없는 환경에서는 노출하지 않는다(호버 전용 어피던스). */
+@media (max-width: 991px) {
+  .toc-rail {
+    display: none;
+  }
+}
+
+@media (hover: none) {
+  .toc-rail {
+    display: none;
+  }
+}
+
+@media print {
+  .toc-rail {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .toc-rail,
+  .toc-rail-dot,
+  .toc-rail-dot::after,
+  .toc-rail-label {
+    transition: none;
+  }
 }
 
 /* ── 카테고리 버블 태그 ── */
