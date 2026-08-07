@@ -3070,7 +3070,10 @@ html[data-theme="dark"] .push-status-on {
   position: fixed;
   right: 0;
   top: 72px;
-  bottom: 152px;
+  /* 하단은 toc.ts railBottomInset() 이 스크롤 FAB 그룹을 실측해 써 넣는다(읽기 모드처럼
+     FAB 개수가 바뀌면 함께 움직인다). 아래 값은 실측 전 첫 프레임 폴백이며 toc.ts
+     RAIL_BOTTOM_INSET 과 같아야 한다. */
+  bottom: var(--toc-rail-bottom, 152px);
   width: 0;
   /* 스크롤 FAB 그룹(--wiki-z-scroll-fab 1040) 바로 위 — 하단 점의 확장 카드가 FAB 에 가려지지
      않도록. 접힌 점은 FAB 과 가로로 겹치지 않으므로 FAB 조작을 막지 않고, 모달·오프캔버스·
@@ -3085,7 +3088,65 @@ html[data-theme="dark"] .push-status-on {
   opacity: 1;
 }
 
-/* 접힌 상태의 박스는 점보다 넉넉한 히트 영역이고, 실제 점은 ::after 가 그린다.
+/* ── 확장(전체 목차) 패널 ──
+   어느 점에 호버하든 전 항목을 함께 펼친다(점 하나만 펼치면 나머지 목차를 볼 수 없다).
+   확장 배치는 문서 위치 비율이 아니라 연속 목록이며(toc.ts layoutRailPositions), 그 목록을
+   감싸는 유리 패널이 ::after 다. 세로 범위는 JS 가 --toc-rail-panel-top/-h 로 준다.
+   확장 중에는 컨테이너가 패널 폭을 가진다 — 행은 left/right 로 이 폭을 채우므로 폭 0 인
+   접힌 상태 그대로면 행 너비가 음수가 되어 사라진다. */
+.toc-rail.toc-rail-expanded {
+  width: 300px;
+}
+
+/* 호버 유지 영역 — 레일 사각형 전체를 덮는 투명 박스(확장 중에만 히트 테스트에 참여).
+   ① 좁게 잡으면(예: 패널 세로 범위 + 점 열 폭 띠) 목록이 레일 세로 가운데로 모이므로
+      호버한 점과 패널 사이에 어느 쪽에도 안 걸리는 사각지대가 생겨, 패널로 손을 뻗는
+      순간 접힌다. ② 확장 상태에서만 auto 라 접힌 동안에는 본문을 전혀 막지 않고,
+      확장은 점 위에서만 시작되므로 이 영역에 갇히려면 먼저 레일을 가리켜야 한다
+      (그 대가로 확장 중에는 우측 300px 의 클릭·텍스트 선택이 막힌다 — 포인터가 이
+      영역을 벗어나면 바로 접히므로 되돌리는 비용은 마우스 이동 한 번이다).
+   ③ 점은 `top` 중심 기준(translateY(-50%))이라 히트 박스가 레일 박스 위아래로 반높이만큼
+      삐져나온다. 덮개를 딱 레일 박스로 맞추면 그 띠에서 확장 → 행이 목록 위치로 이동 →
+      호버 끊김 → 접힘 → 점이 포인터 아래로 복귀 → 재확장의 진동이 생기므로 같은 반높이만큼
+      넓힌다. 이 여유는 toc.ts railBottomInset() 이 FAB 그룹 위에 함께 확보해 둔다. */
+.toc-rail::before {
+  content: '';
+  position: absolute;
+  inset: calc(var(--toc-rail-hit-h, 22px) / -2) 0;
+  pointer-events: none;
+}
+
+.toc-rail.toc-rail-expanded::before {
+  pointer-events: auto;
+}
+
+/* 유리 패널(시각 전용). 트리 순서상 행보다 뒤라 행 위에 그려지므로 행에 z-index 를 준다.
+   전역 리셋 `* { box-sizing: border-box }` 는 의사요소를 매치하지 않으므로 여기서 직접
+   지정한다 — content-box 로 두면 테두리 2px 만큼 JS 가 계산한 범위를 넘는다. */
+.toc-rail::after {
+  content: '';
+  position: absolute;
+  box-sizing: border-box;
+  left: 0;
+  right: 0;
+  top: var(--toc-rail-panel-top, 0);
+  height: var(--toc-rail-panel-h, 0);
+  border: 1px solid var(--wiki-border);
+  border-radius: var(--wiki-radius-lg);
+  background: var(--wiki-glass-bg);
+  backdrop-filter: var(--wiki-glass-blur);
+  -webkit-backdrop-filter: var(--wiki-glass-blur);
+  box-shadow: var(--wiki-shadow-md);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--wiki-dur-fast) ease;
+}
+
+.toc-rail.toc-rail-expanded::after {
+  opacity: 1;
+}
+
+/* 접힌 상태의 박스는 점보다 넉넉한 히트 영역이고, 실제 점은 .toc-rail-dot::after 가 그린다.
    박스 높이(--toc-rail-hit-h)는 인접 점 간격과 같아야 한다 — 더 크면 박스가 겹쳐
    뒤 형제가 앞 점의 원 위를 덮고, 가리킨 점과 열리는 카드가 어긋난다.
    기본값은 toc.ts 의 RAIL_MIN_GAP 과 같은 22px 이고, 균등 분배 폴백처럼 간격이 더
@@ -3094,6 +3155,9 @@ html[data-theme="dark"] .push-status-on {
   --toc-rail-dot-size: 9px;
   position: absolute;
   right: 0;
+  /* 접힌 좌표는 문서 내 비율(--toc-rail-y), 펼친 좌표는 연속 목록(--toc-rail-y-expanded).
+     둘 다 JS 가 커스텀 속성으로 주고 상태 전환은 CSS 가 고른다. */
+  top: var(--toc-rail-y, 0px);
   transform: translateY(-50%);
   display: flex;
   align-items: center;
@@ -3193,8 +3257,77 @@ html[data-theme="dark"] .push-status-on {
   font-variant-numeric: tabular-nums;
 }
 
+/* ── 확장 상태의 행 ──
+   패널(.toc-rail::after) 안에서 폭을 가득 채우는 좌측 정렬 목차 행이 된다. 카드 chrome 은 패널이
+   맡으므로 행 자체는 투명하고, 가리킨 행만 옅은 브랜드색으로 표시한다. 행 높이는 JS 가 준
+   --toc-rail-row-h 에서 2px 을 빼 행 사이에 실낱 간격을 남긴다.
+   .toc-rail-expandable 이 없으면(초밀집 문서라 목록이 레일에 안 들어감) 이 상태로 들어가지
+   않고 기존의 "가리킨 점만 카드로" 동작이 유지된다. */
+.toc-rail.toc-rail-expanded .toc-rail-dot {
+  top: var(--toc-rail-y-expanded, var(--toc-rail-y, 0px));
+  left: 6px;
+  right: 6px;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  height: calc(var(--toc-rail-row-h, 24px) - 2px);
+  justify-content: flex-start;
+  border-color: transparent;
+  border-radius: var(--wiki-radius-md);
+  background: transparent;
+  box-shadow: none;
+  /* 유리 패널(::after)보다 위에 와야 행이 가려지지 않는다. */
+  z-index: 1;
+  /* 비율 좌표 → 목록 좌표 이동만 애니메이션한다. 기본 상태에 두면 접힌 좌표 갱신
+     (refresh() 의 다단 재계산·본문 ResizeObserver)마다 점이 미끄러진다. */
+  transition: top var(--wiki-dur-moderate) var(--wiki-ease),
+    background var(--wiki-dur-fast) ease;
+}
+
+.toc-rail.toc-rail-expanded .toc-rail-dot::after {
+  opacity: 0;
+}
+
+.toc-rail.toc-rail-expanded .toc-rail-label {
+  opacity: 1;
+}
+
+/* 확장 상태에서는 번호만으로 계층을 읽기 어려우므로 레벨만큼 들여쓴다. */
+.toc-rail.toc-rail-expanded .toc-rail-lv2 .toc-rail-label {
+  padding-left: 22px;
+}
+
+.toc-rail.toc-rail-expanded .toc-rail-lv3 .toc-rail-label {
+  padding-left: 34px;
+}
+
+.toc-rail.toc-rail-expanded .toc-rail-lv4 .toc-rail-label {
+  padding-left: 46px;
+}
+
+.toc-rail.toc-rail-expanded .toc-rail-dot:hover {
+  max-width: none;
+  height: calc(var(--toc-rail-row-h, 24px) - 2px);
+  background: color-mix(in srgb, var(--wiki-primary) 12%, transparent);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-color: transparent;
+  box-shadow: none;
+  z-index: 2;
+}
+
 /* Raw 보기에는 본문 헤딩이 없다(JS 도 레일을 비우지만 전환 순간 잔상을 막는다). */
 body.raw-mode .toc-rail {
+  display: none;
+}
+
+/* 목차 사이드바가 없는 레이아웃(default·wide)에서만 띄운다 — left-toc·right-toc·docs 는
+   같은 목차를 사이드바로 상시 노출하므로 레일이 중복이다. toc.ts railEligible 과 같은
+   화이트리스트로 적고(:not 으로 뒤집어 표현), 레이아웃 모드가 추가돼도 양쪽이 함께
+   막도록 한다. display:none 대신 :not 을 쓰는 이유는 노출 쪽에 규칙을 두면 JS 가 쓰는
+   `rail.hidden`(UA display:none)을 특이성으로 이겨 버리기 때문이다.
+   data-layout-mode 는 BaseLayout/ssr 이 항상 5종 중 하나로 주입한다. */
+body:not([data-layout-mode="default"]):not([data-layout-mode="wide"]) .toc-rail {
   display: none;
 }
 
@@ -3220,6 +3353,8 @@ body.raw-mode .toc-rail {
 @media (prefers-reduced-motion: reduce) {
 
   .toc-rail,
+  .toc-rail::after,
+  .toc-rail.toc-rail-expanded .toc-rail-dot,
   .toc-rail-dot,
   .toc-rail-dot::after,
   .toc-rail-label {

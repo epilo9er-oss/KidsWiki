@@ -19,11 +19,19 @@ export function createTocController(opts: TocControllerOptions = {}) {
 
   // ── 우측 스크롤바 목차 레일 상수 ──
   // 레일은 뷰포트 우측 끝(스크롤바 옆)에 고정되며, 상단/하단 여백으로 헤더·스크롤 FAB 그룹을 피한다.
-  // 값은 style.css `.toc-rail` 의 top/bottom 과 반드시 같아야 한다(JS 가 이 범위 안에서 좌표를 계산).
+  // 상단은 고정값이라 style.css `.toc-rail` 의 top 과 반드시 같아야 하고(JS 가 이 범위 안에서
+  // 좌표를 계산), 하단은 아래 railBottomInset() 이 실측해 CSS 로 내보낸다.
   const RAIL_TOP_INSET = 72;     // px
-  // 레일이 뜨는 조건(헤딩 2개 이상 → 목차 존재)에서는 FAB 이 최소 3개(목차/맨 위로/맨 아래로)
-  // 보이므로 그룹 높이 3*36+2*8=124px, 하단 여백 24px → 그룹 상단이 148px. 그 위에서 끝낸다.
+  // 하단 여백은 스크롤 FAB 그룹을 실측해서 정한다(JS 가 --toc-rail-bottom 으로 써 넣고
+  // style.css `.toc-rail` 이 그 값을 쓴다). FAB 개수는 상황에 따라 변한다 — 기본 3개(목차/
+  // 맨 위로/맨 아래로)지만 읽기 모드에서는 종료 FAB 이 더 붙어 4개가 되고, temporal 로 목차가
+  // 통째로 숨은 문서에서는 목차 FAB 이 빠져 2개가 된다. 개수·크기·간격을 상수로 재현하면
+  // CSS 와 어긋나는 순간 조용히 틀어지므로 rect 를 읽는다. 아래 값은 실측 전(첫 프레임)
+  // 폴백이며 style.css 의 `bottom` 기본값과 같아야 한다.
   const RAIL_BOTTOM_INSET = 152; // px
+  // FAB 그룹 위로 남길 여유. 확장 중 호버 덮개가 점의 히트 박스만큼(RAIL_MIN_GAP/2) 레일
+  // 아래로 삐져나오므로 그만큼 + 여유를 함께 확보해야 덮개가 최상단 FAB 의 클릭을 삼키지 않는다.
+  const RAIL_FAB_CLEARANCE = 4;  // px
   // 점의 히트 박스 높이(style.css `--toc-rail-hit-h` 기본값)와 같은 값이어야 인접 박스가 겹치지
   // 않는다 — 겹치면 뒤 형제가 히트 테스트를 가져가 "가리킨 점"과 "열리는 카드"가 어긋난다.
   const RAIL_MIN_GAP = 22;       // px
@@ -31,6 +39,13 @@ export function createTocController(opts: TocControllerOptions = {}) {
   // "열리는 카드"가 어긋난다. 그 밀도에서는 어피던스 자체가 무의미하므로 레일을 띄우지 않는다.
   const RAIL_MIN_DOT_GAP = 4;    // px
   const RAIL_MIN_HEIGHT = 240;   // px — 이보다 낮은 뷰포트에서는 레일을 띄우지 않는다
+  // ── 확장(전체 목차) 상태 상수 ──
+  // 점 하나에 호버해도 전 항목을 함께 펼친다. 확장 배치는 문서 위치 비율이 아니라 연속 목록이며
+  // 행 높이는 RAIL_ROW_H 를, 레일 높이에 다 들어가지 않으면 RAIL_ROW_MIN 까지 줄인다.
+  // 그래도 못 담는 초밀집 문서는 전체 확장을 포기하고 가리킨 점만 카드로 펼친다(기존 동작).
+  const RAIL_ROW_H = 24;         // px
+  const RAIL_ROW_MIN = 18;       // px
+  const RAIL_PANEL_PAD = 6;      // px — 패널이 행 위아래로 두르는 여백(style.css ::after 가 소비)
   let railRebuildTimer: number | null = null;
   let railLayoutTimer: number | null = null;
   // 마지막으로 만든 점 구성의 시그니처(헤딩 id·레벨·라벨). 같으면 재구축 대신 좌표만 갱신한다 —
@@ -100,17 +115,26 @@ export function createTocController(opts: TocControllerOptions = {}) {
 
   // ── 우측 스크롤바 목차 레일 (PC 전용) ──
   // 본문 헤딩 하나당 점 하나를 문서 내 위치 비율대로 뷰포트 우측 끝에 배치한다(미니맵 매핑).
-  // 호버하면 점이 좌측으로 펼쳐지며 목차 제목 카드가 되고, 클릭하면 FAB 목차와 동일한 경로
+  // 목차 사이드바가 없는 레이아웃(default·wide)에서만 띄운다. 어느 점에든 호버하면 전체 목차가
+  // 패널로 펼쳐지고, 클릭하면 FAB 목차와 동일한 경로
   // (_resolveAnchorTarget → _scrollToElementWithAncestors)로 해당 헤딩까지 스크롤한다.
   // 목차 패널·사이드바와 같은 목차를 포인터 전용으로 중복 제공하므로 키보드/스크린리더 경로는
   // 기존 목차가 담당한다(컨테이너 aria-hidden, 점은 포커스 대상이 아닌 span).
 
-  /** 레일을 띄울 조건인지: PC 폭 + 포인터 호버 가능 + 문서 페이지 노출 + Raw 모드 아님. */
+  /** 레일을 띄울 조건인지: 목차 사이드바가 없는 레이아웃 + PC 폭 + 포인터 호버 가능 +
+   *  문서 페이지 노출 + Raw 모드 아님. */
   function railEligible(): boolean {
     const articlePage = document.getElementById('articlePage');
     if (!articlePage || articlePage.classList.contains('d-none')) return false;
     if (document.body.classList.contains('raw-mode')) return false;
-    if (window.innerHeight - RAIL_TOP_INSET - RAIL_BOTTOM_INSET < RAIL_MIN_HEIGHT) return false;
+    // 목차 사이드바가 없는 레이아웃(default·wide)에서만 — left-toc·right-toc·docs 는 같은
+    // 목차를 사이드바로 상시 노출하므로 레일이 중복이다. style.css 도 같은 화이트리스트를
+    // `body:not([data-layout-mode="default"]):not(...="wide"])` 로 걸어 두었으므로 모드를
+    // 추가할 때는 두 곳을 함께 고친다(극성이 달라지면 빈 레일이 남는다).
+    // 개인 설정 오버라이드는 body[data-layout-mode] 에 즉시 반영되므로 그쪽을 우선 읽는다.
+    const mode = document.body.dataset.layoutMode || window.appConfig?.layoutMode || 'default';
+    if (mode !== 'default' && mode !== 'wide') return false;
+    if (window.innerHeight - RAIL_TOP_INSET - railBottomInset() < RAIL_MIN_HEIGHT) return false;
     if (typeof window.matchMedia !== 'function') return false;
     // CSS 의 노출 조건(min-width:992px + hover:hover)과 일치시켜, 숨겨질 레일을 계산하지 않는다.
     return window.matchMedia('(min-width: 992px)').matches && window.matchMedia('(hover: hover)').matches;
@@ -147,16 +171,46 @@ export function createTocController(opts: TocControllerOptions = {}) {
     };
   }
 
-  /** 이상적 위치(문서 내 비율)를 최소 간격 제약에 맞게 보정해 레일 좌표를 확정한다. */
+  /** 스크롤 FAB 그룹을 실측해 레일 하단 여백을 정한다(그룹 상단 + 점 히트 박스 반높이 + 여유).
+   *  덮개는 레일 박스보다 점 히트 박스 반높이만큼 위아래로 넓다(style.css ::before) — 그
+   *  삐져나온 부분까지 FAB 위에서 끝나야 최상단 FAB 의 클릭을 삼키지 않는다. */
+  function railBottomInset(): number {
+    const fabGroup = document.getElementById('scrollFabGroup');
+    const rect = fabGroup ? fabGroup.getBoundingClientRect() : null;
+    // 그룹이 없거나(다른 셸) 자식이 전부 display:none 이면 rect 가 0 이라 폴백을 쓴다.
+    if (!rect || !rect.height) return RAIL_BOTTOM_INSET;
+    const fabTop = window.innerHeight - rect.top;
+    return Math.max(RAIL_BOTTOM_INSET, Math.ceil(fabTop) + RAIL_MIN_GAP / 2 + RAIL_FAB_CLEARANCE);
+  }
+
+  /** 확장(전체 목차) 상태를 끈다 — 레일이 사라지거나 다시 만들어질 때 잔상이 남지 않게. */
+  function collapseRail(rail?: HTMLElement | null) {
+    const el = rail || document.getElementById('tocScrollRail');
+    if (el) el.classList.remove('toc-rail-expanded');
+  }
+
+  /** 이상적 위치(문서 내 비율)를 최소 간격 제약에 맞게 보정해 레일 좌표를 확정한다.
+   *  접힌 좌표(--toc-rail-y)와 확장 좌표(--toc-rail-y-expanded)를 함께 계산해 CSS 가
+   *  상태에 따라 고르게 한다(둘 다 인라인 값이면 상태 전환을 JS 가 매번 다시 써야 한다). */
   function layoutRailPositions() {
     const rail = document.getElementById('tocScrollRail');
     if (!rail) return;
     const dots = Array.from(rail.querySelectorAll('.toc-rail-dot')) as HTMLElement[];
     if (!dots.length) return;
-    const railHeight = window.innerHeight - RAIL_TOP_INSET - RAIL_BOTTOM_INSET;
+    // 레일 하단은 FAB 그룹 실측값을 따른다(읽기 모드 종료 FAB 처럼 개수가 바뀌면 함께 움직인다).
+    const bottomInset = railBottomInset();
+    const railHeight = window.innerHeight - RAIL_TOP_INSET - bottomInset;
     // 레일을 띄우지 않는 높이에서는 좌표가 음수가 되어 점이 헤더 쪽으로 튄다. syncRail 이
-    // 리사이즈 디바운스 후 레일을 비우지만, 그 사이 잔상이 보이지 않도록 여기서도 막는다.
-    if (railHeight < RAIL_MIN_HEIGHT) return;
+    // 리사이즈 디바운스 후 레일을 비우지만, 그 사이 잔상이 보이지 않도록 여기서 감춘다 —
+    // 좌표를 다시 찍지 않고 그냥 두면 옛 railHeight 로 찍힌 아래쪽 점이 그대로 남아,
+    // FAB 이 늘어난 만큼(읽기 모드 진입 등) 그 위에 겹친 채 호버 카드까지 연다.
+    if (railHeight < RAIL_MIN_HEIGHT) {
+      rail.hidden = true;
+      rail.classList.remove('toc-rail-expandable');
+      collapseRail(rail);
+      return;
+    }
+    rail.style.setProperty('--toc-rail-bottom', `${bottomInset}px`);
     const docHeight = Math.max(document.documentElement.scrollHeight, 1);
 
     let ys: number[];
@@ -192,10 +246,42 @@ export function createTocController(opts: TocControllerOptions = {}) {
     const tops = ys.map((y) => Math.round(y));
     let minGap = RAIL_MIN_GAP;
     for (let i = 1; i < tops.length; i++) minGap = Math.min(minGap, tops[i] - tops[i - 1]);
-    if (minGap < RAIL_MIN_DOT_GAP) { rail.hidden = true; return; }
+    if (minGap < RAIL_MIN_DOT_GAP) {
+      rail.hidden = true;
+      rail.classList.remove('toc-rail-expandable');
+      collapseRail(rail);
+      return;
+    }
     rail.hidden = false;
-    dots.forEach((dot, i) => { dot.style.top = `${tops[i]}px`; });
+    dots.forEach((dot, i) => { dot.style.setProperty('--toc-rail-y', `${tops[i]}px`); });
     rail.style.setProperty('--toc-rail-hit-h', `${Math.floor(minGap)}px`);
+
+    // ── 확장 좌표: 문서 위치 비율과 무관한 연속 목록(레일 세로 가운데 정렬) ──
+    // 비율 배치를 그대로 두고 라벨만 펼치면 밀집 구간에서 카드가 서로 겹쳐 읽을 수 없고,
+    // 행 사이에 빈틈이 생겨 포인터가 그 틈에 들어갈 때마다 접힘↔펼침이 반복된다.
+    // 행 높이를 줄여도 다 담기지 않으면(초밀집 문서) 전체 확장을 포기한다 — 그 경우 CSS 가
+    // 가리킨 점만 카드로 펼치는 기존 동작으로 남는다.
+    let rowH = RAIL_ROW_H;
+    if (dots.length * rowH > railHeight) rowH = Math.floor(railHeight / dots.length);
+    if (rowH < RAIL_ROW_MIN) {
+      rail.classList.remove('toc-rail-expandable');
+      collapseRail(rail);
+      return;
+    }
+    const listHeight = rowH * dots.length;
+    const listTop = (railHeight - listHeight) / 2;
+    dots.forEach((dot, i) => {
+      dot.style.setProperty('--toc-rail-y-expanded', `${Math.round(listTop + rowH * i + rowH / 2)}px`);
+    });
+    rail.style.setProperty('--toc-rail-row-h', `${rowH}px`);
+    // 패널 여백은 레일 범위 안으로 가둔다 — 목록이 레일을 거의 꽉 채우면(행 높이를 줄인
+    // 밀집 문서) 여백만큼 넘쳐 헤더 아래/스크롤 FAB 위를 덮는다(레일 z-index 가 그 둘보다
+    // 위라 실제로 가려진다). 상/하 inset 을 맞춰 둔 의미가 사라지지 않게 clamp 한다.
+    const panelTop = Math.max(0, Math.round(listTop) - RAIL_PANEL_PAD);
+    const panelBottom = Math.min(railHeight, Math.round(listTop) + listHeight + RAIL_PANEL_PAD);
+    rail.style.setProperty('--toc-rail-panel-top', `${panelTop}px`);
+    rail.style.setProperty('--toc-rail-panel-h', `${Math.max(0, panelBottom - panelTop)}px`);
+    rail.classList.add('toc-rail-expandable');
   }
 
   /** 좌표 재계산 디바운스(이미지 로드 등으로 본문 높이가 계속 변할 때 과다 계산 방지). */
@@ -215,7 +301,8 @@ export function createTocController(opts: TocControllerOptions = {}) {
     if (headings.length < 2) {
       // 헤딩이 하나뿐이면 이동 대상이 사실상 없으므로 레일을 띄우지 않는다.
       rail.innerHTML = '';
-      rail.classList.remove('visible');
+      rail.classList.remove('visible', 'toc-rail-expandable');
+      collapseRail(rail);
       rail.hidden = false;
       railSignature = '';
       return;
@@ -256,7 +343,10 @@ export function createTocController(opts: TocControllerOptions = {}) {
       dot.appendChild(label);
       frag.appendChild(dot);
     });
+    // 재구축된 점은 확장 좌표가 아직 없으므로(바로 아래 layoutRailPositions 가 채운다)
+    // 확장 상태를 물려받으면 한 프레임 동안 모든 행이 레일 상단에 겹쳐 보인다.
     rail.replaceChildren(frag);
+    collapseRail(rail);
     rail.classList.add('visible');
     railSignature = signature;
     layoutRailPositions();
@@ -290,6 +380,9 @@ export function createTocController(opts: TocControllerOptions = {}) {
     if (!dot) return;
     const id = (dot as HTMLElement).dataset.tocRailId;
     if (!id) return;
+    // 이동하는 순간 펼쳐진 목차 패널은 역할이 끝났으므로 접는다(포인터를 다시 움직이면
+    // 평소처럼 다시 펼쳐진다 — 호버 어피던스 자체는 그대로다).
+    collapseRail(dot.closest('.toc-rail') as HTMLElement | null);
     const target = typeof window._resolveAnchorTarget === 'function'
       ? window._resolveAnchorTarget(id)
       : document.getElementById(id);
@@ -453,6 +546,13 @@ export function createTocController(opts: TocControllerOptions = {}) {
     const rail = document.getElementById('tocScrollRail');
     if (rail) {
       rail.addEventListener('click', onRailClick);
+      // 확장(전체 목차) 토글. 접힌 상태에서 pointerover 는 점 위에서만 발생하고(컨테이너는
+      // pointer-events:none), 펼친 뒤에는 레일 사각형 전체를 덮는 ::before 가 호버를 이어받아
+      // pointerleave 가 그 영역을 벗어날 때만 발생한다.
+      rail.addEventListener('pointerover', () => {
+        if (rail.classList.contains('toc-rail-expandable')) rail.classList.add('toc-rail-expanded');
+      });
+      rail.addEventListener('pointerleave', () => collapseRail(rail));
       window.addEventListener('resize', () => scheduleRailSync(160), { passive: true });
       // 이미지·폰트 로드로 본문 높이가 늘면 문서 내 비율이 달라지지만 mutation 은 발생하지
       // 않으므로(옵저버가 못 잡는다) 본문 크기 자체를 관찰해 좌표를 다시 계산한다.
@@ -557,6 +657,8 @@ export function createTocController(opts: TocControllerOptions = {}) {
     }
     const active = document.body.classList.toggle('reading-mode');
     applyReadingUi(active);
+    // FAB 이 3↔4개로 바뀌므로 확장 영역(패널·호버 덮개)을 다시 계산한다.
+    scheduleRailLayout(0);
     try {
       if (active) localStorage.setItem('readingMode', '1');
       else localStorage.removeItem('readingMode');
