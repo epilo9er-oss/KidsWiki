@@ -192,7 +192,7 @@ test('Analytics Engine 데이터셋을 제거한다(프로덕션 트렌딩·통�
         '',
         '[[analytics_engine_datasets]]',
         'binding = "ANALYTICS"',
-        'dataset = "cloudwiki"',
+        'dataset = "kidswiki"',
     ].join('\n');
     assert.equal(parse(buildPreviewConfig(toml).text).analytics_engine_datasets, undefined);
 });
@@ -392,11 +392,11 @@ test('CI 가 다른 Worker 를 기대하면 설정을 만들지 않고 실패한
         return spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', env });
     };
 
-    const mismatch = run('cloudwiki');
+    const mismatch = run('kidswiki');
     assert.equal(mismatch.status, 1, '이름이 다르면 0 이 아닌 코드로 죽어야 한다');
     assert.match(mismatch.stderr, /중단/);
 
-    const match = run('cloudwiki-preview');
+    const match = run('kidswiki-preview');
     assert.equal(match.status, 0, '이름이 같으면 정상 생성돼야 한다');
 });
 

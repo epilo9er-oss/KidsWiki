@@ -6,7 +6,7 @@
 // #setupTitle/#nameInput/#submitBtn 등은 /dist/setup-profile.js·setup-profile-form.js 가 채운다.
 import BaseLayout from '../layouts/BaseLayout.astro';
 ---
-<BaseLayout pagePath="/setup-profile.html" title="프로필 설정 - CloudWiki">
+<BaseLayout pagePath="/setup-profile.html" title="프로필 설정 - KidsWiki">
     <Fragment slot="head">
         <!-- 테마 FOUC 방지: CSS 로드 후 즉시 테마 적용 -->
         <script is:inline>try{var t=localStorage.getItem('themeMode');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
@@ -103,7 +103,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     <div class="setup-container">
         <i class="mdi mdi-account-cog-outline setup-icon" id="setupIcon"></i>
         <h2 class="setup-title" id="setupTitle">환영합니다!</h2>
-        <p class="setup-subtitle" id="setupSubtitle">CloudWiki에서 사용할 표시명을 설정해주세요.</p>
+        <p class="setup-subtitle" id="setupSubtitle">KidsWiki에서 사용할 표시명을 설정해주세요.</p>
 
         <div class="form-group">
             <input type="text" id="nameInput" class="name-input" placeholder="새 표시 이름" autocomplete="off"

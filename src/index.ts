@@ -202,7 +202,7 @@ app.get('/api/analytics/trending', async (c) => {
     try {
         const result = await queryAnalytics(accountId, apiToken, `
             SELECT blob2 as slug, sum(_sample_interval) as views
-            FROM cloudwiki
+            FROM kidswiki
             WHERE blob1 = 'pageview' AND blob2 != ''
               AND timestamp >= now() - toIntervalHour(${hours})
             GROUP BY slug ORDER BY views DESC LIMIT ${limit}
@@ -234,13 +234,13 @@ app.get('/api/analytics/page-views/:slug', requireAdmin, async (c) => {
         const [totalResult, recentResult] = await Promise.all([
             queryAnalytics(accountId, apiToken, `
                 SELECT sum(_sample_interval) as views
-                FROM cloudwiki
+                FROM kidswiki
                 WHERE blob1 = 'pageview' AND blob2 = '${safeSlug}'
                 FORMAT JSON
             `),
             queryAnalytics(accountId, apiToken, `
                 SELECT sum(_sample_interval) as views
-                FROM cloudwiki
+                FROM kidswiki
                 WHERE blob1 = 'pageview' AND blob2 = '${safeSlug}'
                   AND timestamp >= now() - toIntervalDay(7)
                 FORMAT JSON
@@ -284,7 +284,7 @@ interface CrawlerPageOpts {
 }
 
 function buildCrawlerPage(c: Context<Env>, opts: CrawlerPageOpts): Response {
-    const wikiName = c.env?.WIKI_NAME || 'CloudWiki';
+    const wikiName = c.env?.WIKI_NAME || 'KidsWiki';
     const wikiFavicon = c.env?.WIKI_FAVICON_URL || '/favicon.ico';
     const status = opts.status ?? 200;
     // 같은 URL이 UA에 따라 SPA HTML 또는 크롤러 HTML 두 가지로 나뉘므로
@@ -363,7 +363,7 @@ const ASTRO_SHELL_PAGES = new Set(['/error.html', '/login.html', '/index.html', 
 async function renderHtml(c: Context<Env>, targetHtmlPath: string, pageData: Record<string, any> = {}): Promise<Response> {
     const htmlResponse = await fetchAssetHtml(c, targetHtmlPath);
 
-    const wikiName = c.env.WIKI_NAME || 'CloudWiki';
+    const wikiName = c.env.WIKI_NAME || 'KidsWiki';
     const wikiLogoUrl = c.env.WIKI_LOGO_URL || '';
     const wikiFaviconUrl = c.env.WIKI_FAVICON_URL || '/favicon.ico';
 
@@ -495,7 +495,7 @@ app.get('/w/*', async (c) => {
     const startTime = Date.now();
     const crawlEnabled = c.env.ALLOW_CRAWL === 'true';
     const isCrawler = shouldServeCrawler(c);
-    const wikiName = c.env.WIKI_NAME || 'CloudWiki';
+    const wikiName = c.env.WIKI_NAME || 'KidsWiki';
     const canonicalUrl = new URL(c.req.url).origin + `/w/${encodeURIComponent(slug)}`;
 
     // ── 캐시 확인 (비관리자 + redirect=no가 아닌 일반 요청만) ──
@@ -913,7 +913,7 @@ app.get('/login', async (c) => {
         ppSlug ? db.prepare('SELECT content FROM pages WHERE slug = ? AND deleted_at IS NULL LIMIT 1').bind(ppSlug).first<{ content: string }>() : Promise.resolve(null),
     ]);
     return renderHtml(c, '/login.html', {
-        _ssrTitle: '로그인 - ' + (c.env.WIKI_NAME || 'Cloudwiki'),
+        _ssrTitle: '로그인 - ' + (c.env.WIKI_NAME || 'KidsWiki'),
         loginMessage: c.env.LOGIN_MESSAGE || '비공개 위키입니다. 로그인 후 이용해주세요.',
         termsOfService: tosPage?.content || '',
         privacyPolicy: ppPage?.content || '',
@@ -1072,7 +1072,7 @@ app.get('/setup-profile', async (c) => {
 app.get('/error', async (c) => {
     const reason = c.req.query('reason') || '알 수 없는 오류가 발생했습니다.';
     const res = await renderHtml(c, '/error.html', {
-        _ssrTitle: '오류가 발생했습니다 - ' + (c.env.WIKI_NAME || 'CloudWiki'),
+        _ssrTitle: '오류가 발생했습니다 - ' + (c.env.WIKI_NAME || 'KidsWiki'),
         _ssrReason: reason,
     });
     return new Response(res.body, { status: 400, headers: res.headers });
@@ -1195,7 +1195,7 @@ app.notFound(async (c) => {
         return c.json({ error: 'Not Found' }, 404);
     }
     const res = await renderHtml(c, '/error.html', { 
-        _ssrTitle: '페이지를 찾을 수 없습니다 - ' + (c.env?.WIKI_NAME || 'CloudWiki'),
+        _ssrTitle: '페이지를 찾을 수 없습니다 - ' + (c.env?.WIKI_NAME || 'KidsWiki'),
         _ssrReason: '요청하신 페이지를 찾을 수 없습니다 (404 Not Found)'
     });
     return new Response(res.body, { status: 404, headers: res.headers });
@@ -1209,7 +1209,7 @@ app.onError(async (err, c) => {
         return c.json({ error: 'Internal Server Error' }, 500);
     }
     const res = await renderHtml(c, '/error.html', { 
-        _ssrTitle: '오류가 발생했습니다 - ' + (c.env?.WIKI_NAME || 'CloudWiki'),
+        _ssrTitle: '오류가 발생했습니다 - ' + (c.env?.WIKI_NAME || 'KidsWiki'),
         _ssrReason: '서버 내부 오류가 발생했습니다 (500 Internal Server Error)'
     });
     return new Response(res.body, { status: 500, headers: res.headers });

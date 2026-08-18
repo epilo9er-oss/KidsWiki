@@ -29,7 +29,7 @@
 //
 // 새 웹폰트(Montserrat) → src/shared/cdn.ts FONTS.ui 에 동기화함.
 //
-// 사용자 대면 설명 문서: Cloudwiki/설정/테마/VIA.
+// 사용자 대면 설명 문서: KidsWiki/설정/테마/VIA.
 
 /** @type {import('./index.mjs').ThemeDefinition} */
 export default {

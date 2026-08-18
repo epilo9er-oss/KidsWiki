@@ -4,7 +4,7 @@
  * - base 슬러그 자신과 모든 하위 슬러그(`base/...`) 를 한 번에 조회한다.
  * - 출력은 **순수 위키 마크다운 텍스트** — render.ts 의 평소 파이프라인을 그대로 거친다.
  *   라인 구분은 `\n`, marked 의 `breaks: true` 가 단일 newline 을 `<br>` 로 변환해 줄바꿈을 보존한다.
- *   ([[Cloudwiki]]\n├── [[Cloudwiki/...|name]]\n... 형식 — 기존 "문서 구조 보기"
+ *   ([[KidsWiki]]\n├── [[KidsWiki/...|name]]\n... 형식 — 기존 "문서 구조 보기"
  *   `src/client/pages/index.ts` `renderMarkdown` 과 동일한 패턴.)
  * - 각 자식 문서 아래에 그 문서의 TOC 항목을 `[[slug#N|#N. 제목]]` wikilink 로 한 단계 더 들여써 노출한다.
  *   `#0` 도입부는 위키 본문에 `s-0` 앵커가 실존하지 않아 트리에서 생략한다.

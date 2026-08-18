@@ -158,7 +158,7 @@ async function handleJsonRpc(c: Context<Env>, body: any, user: User | null) {
                     logging: {}
                 },
                 serverInfo: {
-                    name: 'cloudwiki-mcp',
+                    name: 'kidswiki-mcp',
                     version: '1.0.0'
                 }
             }

@@ -4,7 +4,7 @@
  * 전역 위키 문서(`routes/wiki.ts`, `routes/admin-mcp.ts`)와 워크스페이스 문서
  * (`utils/workspacePagePipeline.ts`)가 공유하는 순수 계산 로직이다. DOM/네트워크/DB
  * 의존이 전혀 없으므로 서버·클라 어디서나 사용 가능하다. (향후 공유 패키지의
- * `@cloudwiki/wiki-shared/markup/pageMetrics` 로 이전될 모듈.)
+ * `@kidswiki/wiki-shared/markup/pageMetrics` 로 이전될 모듈.)
  */
 
 /**

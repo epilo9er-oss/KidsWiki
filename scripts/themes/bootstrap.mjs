@@ -3,7 +3,7 @@
 // 컨셉: Bootstrap 5 의 기본 색상, 타이포그래피, 둥근 모서리 및 컴포넌트 스타일을 재현한다.
 // 시스템 폰트 스택을 사용하고, 익숙한 부트스트랩의 primary 블루(#0d6efd)와 회색톤을 쓴다.
 //
-// 사용자 대면 설명 문서: Cloudwiki/설정/테마/Bootstrap.
+// 사용자 대면 설명 문서: KidsWiki/설정/테마/Bootstrap.
 
 /** @type {import('./index.mjs').ThemeDefinition} */
 export default {

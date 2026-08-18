@@ -7,7 +7,7 @@ const analyticsRoutes = new Hono<Env>();
 
 analyticsRoutes.use('*', requireAdmin);
 
-const DATASET = 'cloudwiki';
+const DATASET = 'kidswiki';
 
 // Analytics API 자격 증명 확인 헬퍼
 function getAnalyticsCredentials(c: any): { accountId: string; apiToken: string } | null {

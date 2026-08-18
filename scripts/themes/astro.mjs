@@ -18,7 +18,7 @@
 //                  #7c31d5). 라이트 사용자가 보이드로 강제되지 않게 한 톤 다운 해석.
 // 시맨틱색(success/warning/danger/diff/공지/callout)은 베이스 유지(블라스트 반경 최소화).
 //
-// 사용자 대면 설명 문서: Cloudwiki/설정/테마/Astro.
+// 사용자 대면 설명 문서: KidsWiki/설정/테마/Astro.
 
 /** @type {import('./index.mjs').ThemeDefinition} */
 export default {

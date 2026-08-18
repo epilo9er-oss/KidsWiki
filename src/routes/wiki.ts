@@ -902,7 +902,7 @@ wiki.get('/config', async (c) => {
     }
 
     return c.json({
-        wikiName: c.env.WIKI_NAME || 'CloudWiki',
+        wikiName: c.env.WIKI_NAME || 'KidsWiki',
         termsOfServiceSlug: normalizeSlug(c.env.TERMS_OF_SERVICE || ''),
         privacyPolicySlug: normalizeSlug(c.env.PRIVACY_POLICY || ''),
         wikiLogoUrl: c.env.WIKI_LOGO_URL || '',
@@ -1823,7 +1823,7 @@ wiki.get('/w/:slug/edit-permission', requireAuth, async (c) => {
     // 저장 단계에서 같은 사유로 거부당해 본문이 날아가는 것을 막는다.
 
     // 1) 메인 문서는 관리자만 편집 가능.
-    const mainSlug = normalizeSlug(c.env.WIKI_NAME || 'CloudWiki').toLowerCase();
+    const mainSlug = normalizeSlug(c.env.WIKI_NAME || 'KidsWiki').toLowerCase();
     if (slug.toLowerCase() === mainSlug && !isAdmin) {
         return c.json({
             allowed: false,
@@ -2084,7 +2084,7 @@ wiki.put('/w/:slug', requireAuth, requirePermission('wiki:edit'), async (c) => {
     await ensureEditorNoteMigration(db);
 
     // 메인 문서는 관리자만 편집 가능 (slug 기준 판단)
-    const mainSlug = normalizeSlug(c.env.WIKI_NAME || 'CloudWiki').toLowerCase();
+    const mainSlug = normalizeSlug(c.env.WIKI_NAME || 'KidsWiki').toLowerCase();
     if (normalizeSlug(slug).toLowerCase() === mainSlug) {
         if (!isAdmin) {
             return c.json({ error: '메인 문서는 관리자만 편집할 수 있습니다.' }, 403);

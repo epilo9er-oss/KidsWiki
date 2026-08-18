@@ -259,7 +259,7 @@
             if (!result.isConfirmed || !result.value) return;
             const { oct, pts } = result.value;
             const smoothed = smoothFreqResponse(parsed, oct, pts);
-            const note = '1/' + oct + ' oct, ' + smoothed.freq.length + ' pts (cloudwiki)';
+            const note = '1/' + oct + ' oct, ' + smoothed.freq.length + ' pts (kidswiki)';
             const newText = serializeFreqData(parsed.meta, smoothed.freq, smoothed.spl, note);
             const oldBytes = currentValue.length;
             const newBytes = newText.length;

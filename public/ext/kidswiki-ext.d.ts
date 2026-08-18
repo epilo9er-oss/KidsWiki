@@ -1,11 +1,11 @@
 /**
- * Cloudwiki 익스텐션 저작용 앰비언트 타입 선언.
+ * KidsWiki 익스텐션 저작용 앰비언트 타입 선언.
  *
  * 익스텐션 파일(`public/ext/<name>/<name>.js`)은 Vite 번들 밖의 raw JS 로 서빙되므로
  * 빌드/타입체크 대상이 아니다. 이 `.d.ts` 는 저작자의 IDE 자동완성·타입 점검 용도로만
  * 제공된다(런타임에는 영향 없음). 파일 상단에 다음을 추가하면 타입이 적용된다:
  *
- *   /// <reference path="../cloudwiki-ext.d.ts" />
+ *   /// <reference path="../kidswiki-ext.d.ts" />
  *
  * 등록은 `window.defineExtension(manifest, renderer)` 로 한다. 본문에서 `{{<name>:인자}}`
  * 형태로 호출되며, 콜론 앞이 네임스페이스(=`name`=디렉터리명)이다.

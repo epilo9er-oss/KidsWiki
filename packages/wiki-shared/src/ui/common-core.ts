@@ -2,7 +2,7 @@
 /**
  * 앱 독립 공통 테마/레이아웃 유틸리티.
  *
- * cloudwiki(common-wiki.ts)와 cloudspace 양쪽이 공유하는 최소한의 클라이언트 부트스트랩.
+ * kidswiki(common-wiki.ts)와 cloudspace 양쪽이 공유하는 최소한의 클라이언트 부트스트랩.
  * 위키 전용 로직(isForcedDark·스킨 시스템·인증·알림·푸시·사이드바 콘텐츠)은 포함하지 않는다.
  *
  * - 테마(다크/라이트/오토) 초기화·전환

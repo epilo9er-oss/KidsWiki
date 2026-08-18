@@ -5,7 +5,7 @@
  * 왜 필요한가:
  *   Cloudflare 는 "Durable Object 를 **구현(implement)** 하는 Worker" 에는 프리뷰 URL 을 만들지 않는다.
  *   (https://developers.cloudflare.com/workers/versions-and-deployments/preview-urls/ § Limitations)
- *   cloudwiki 본체는 AdminJobDO 를 export 하므로 브랜치 프리뷰가 통째로 막힌다.
+ *   kidswiki 본체는 AdminJobDO 를 export 하므로 브랜치 프리뷰가 통째로 막힌다.
  *   또한 `wrangler versions upload` 는 DO 클래스 라이프사이클 변경(migrations/exports)을 적용할 수 없다.
  *
  *   그래서 프리뷰는 **DO 가 없는 별도 Worker**(`<name>-preview`)로 올린다.
@@ -38,7 +38,7 @@ const OUT = join(ROOT, 'wrangler.preview.toml');
  * - `routes`/`route` — 프리뷰 Worker 가 프로덕션 커스텀 도메인 라우트를 가로채는 사고 방지.
  * - `queues` — consumers 가 복사되면 큐 메시지는 컨슈머 **하나에게만** 전달되므로 프리뷰 Worker 가
  *   프로덕션 메시지를 가로채 소비한다.
- * - `analytics_engine_datasets` — 데이터셋 이름(`cloudwiki`)이 그대로 복사되고
+ * - `analytics_engine_datasets` — 데이터셋 이름(`kidswiki`)이 그대로 복사되고
  *   `src/routes/analytics.ts` 가 그 이름을 하드코딩해 조회하므로, 프리뷰 브라우징이 프로덕션
  *   트렌딩·통계를 오염시킨다. `env.ANALYTICS` 는 optional 이고 `src/utils/analytics.ts` 가
  *   미바인딩을 무시하므로 제거해도 안전하다.
@@ -51,7 +51,7 @@ const DROP_TABLES = new Set([
 ]);
 /**
  * 프리뷰 설정에서 걷어낼 최상위 key = value 항목(아래에서 값을 다시 써 넣는 것 포함).
- * `workers_dev` 는 끈다 — 켜두면 `cloudwiki-preview.<서브도메인>.workers.dev` 라는 **상시 공개
+ * `workers_dev` 는 끈다 — 켜두면 `kidswiki-preview.<서브도메인>.workers.dev` 라는 **상시 공개
  * URL** 이 생기는데, 이건 프리뷰 URL 이 아니라서 Preview URLs 용 Cloudflare Access 로 막히지도 않고
  * 프로덕션 D1/R2/KV 를 그대로 바라본다(`ALLOW_CRAWL="true"` 라 색인되는 중복 오리진이 되기도 한다).
  * 프리뷰 URL 은 `preview_urls = true` 로 계속 동작한다 — 명시값이 workers_dev 기반 기본값을 이긴다.
@@ -386,12 +386,12 @@ export function buildPreviewConfig(source, nameOverride) {
  * Workers Builds 는 연결된 Worker 이름을 `WRANGLER_CI_OVERRIDE_NAME` 으로 주입하고,
  * wrangler 는 설정의 `name` 이 그와 다르면 **경고만 남기고 CI 쪽 이름으로 덮어쓴다**.
  *
- * 그래서 프로덕션 `cloudwiki` Worker 에 연결된 빌드에서 이 설정을 올리면, `cloudwiki-preview`
- * 가 아니라 **프로덕션 `cloudwiki` 에 버전이 올라간다**. 프로덕션은 DO 를 구현하므로 프리뷰 URL 도
+ * 그래서 프로덕션 `kidswiki` Worker 에 연결된 빌드에서 이 설정을 올리면, `kidswiki-preview`
+ * 가 아니라 **프로덕션 `kidswiki` 에 버전이 올라간다**. 프로덕션은 DO 를 구현하므로 프리뷰 URL 도
  * 생기지 않고, 바인딩이 빠진 버전이 프로덕션 버전 목록에 쌓인다. 빌드는 성공으로 끝나서
  * 알아채기 어렵다 — 그래서 여기서 미리 끊는다.
  *
- * 해결은 이름을 맞추는 것이다: 저장소를 `cloudwiki-preview` Worker 에도 연결하고 브랜치 프리뷰
+ * 해결은 이름을 맞추는 것이다: 저장소를 `kidswiki-preview` Worker 에도 연결하고 브랜치 프리뷰
  * 빌드를 그쪽에서 돌린다(docs/branch-preview.md).
  */
 function assertCiNameMatches(previewName) {

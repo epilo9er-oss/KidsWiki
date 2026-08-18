@@ -91,7 +91,7 @@ export function extractMetaDescription(content: string, maxLength = 160): string
  * 클라이언트에서 추가 API 호출 없이 즉시 렌더링 가능
  */
 export function applyPageSSR(response: Response, pageData: Record<string, any>, env: { WIKI_NAME?: string; WIKI_LOGO_URL?: string; WIKI_FAVICON_URL?: string; CUSTOM_HEADER?: string; LAYOUT_MODE?: string }, bundles: BundleName[] = []): Response {
-    const wikiName = env.WIKI_NAME || 'CloudWiki';
+    const wikiName = env.WIKI_NAME || 'KidsWiki';
     const wikiLogoUrl = env.WIKI_LOGO_URL || '';
     const wikiFaviconUrl = env.WIKI_FAVICON_URL || '/favicon.ico';
     const customHeader = env.CUSTOM_HEADER || '';
@@ -115,10 +115,8 @@ export function applyPageSSR(response: Response, pageData: Record<string, any>, 
     const rewriter = new HTMLRewriter()
         .on('.app-wiki-name', {
             text(text) {
-                if (text.text.includes('CloudWiki')) {
-                    text.replace(text.text.replace('CloudWiki', wikiName));
-                } else if (text.text.includes('Cloudwiki')) {
-                    text.replace(text.text.replace('Cloudwiki', wikiName));
+                if (text.text.includes('KidsWiki')) {
+                    text.replace(text.text.replace('KidsWiki', wikiName));
                 }
             }
         })
