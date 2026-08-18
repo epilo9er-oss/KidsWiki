@@ -129,7 +129,7 @@ export function readBranding() {
     const layoutModeRaw = readSingle(toml, 'LAYOUT_MODE', 'default');
     const layoutMode = (layoutModeRaw === 'left-toc' || layoutModeRaw === 'right-toc' || layoutModeRaw === 'docs' || layoutModeRaw === 'wide') ? layoutModeRaw : 'default';
     _cached = {
-        wikiName: readSingle(toml, 'WIKI_NAME', 'CloudWiki'),
+        wikiName: readSingle(toml, 'WIKI_NAME', 'KidsWiki'),
         wikiLogoUrl: readSingle(toml, 'WIKI_LOGO_URL', ''),
         wikiFaviconUrl: readSingle(toml, 'WIKI_FAVICON_URL', '/favicon.ico'),
         layoutMode,
@@ -163,7 +163,7 @@ const LOGO_IMG = (logoUrl) =>
  * 런타임 HTMLRewriter(src/middleware/ssr.ts, src/index.ts getRewriter)와 동일한 결과를 만든다.
  *
  * 치환 대상:
- *  - `.app-wiki-name` 요소의 내부 텍스트 CloudWiki/Cloudwiki → wikiName
+ *  - `.app-wiki-name` 요소의 내부 텍스트 KidsWiki → wikiName
  *  - `.wiki-logo-container` 요소(span/div)의 내부 → <img> (wikiLogoUrl 있을 때)
  *  - `#custom-sidebar-content` → 빌드된 사이드바 항목 HTML (없으면 마커 제거)
  *  - `#custom-footer-content` 내부 → 빌드된 푸터 항목 HTML (없으면 마커 제거)
@@ -176,7 +176,7 @@ export function bakeComponentBranding(html, branding) {
     out = out.replace(
         /(<[a-z0-9]+[^>]*\bclass="[^"]*\bapp-wiki-name\b[^"]*"[^>]*>)([^<]*)(<\/[a-z0-9]+>)/gi,
         (_m, open, inner, close) => {
-            const baked = inner.replace(/CloudWiki/g, wikiName).replace(/Cloudwiki/g, wikiName);
+            const baked = inner.replace(/KidsWiki/g, wikiName);
             return `${open}${baked}${close}`;
         }
     );

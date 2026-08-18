@@ -88,7 +88,7 @@ async function loadBlogList(offset) {
     }
 
     showView('blogList');
-    document.title = '블로그 - ' + (window.appConfig?.wikiName || 'CloudWiki');
+    document.title = '블로그 - ' + (window.appConfig?.wikiName || 'KidsWiki');
   } catch (e) {
     Swal.fire('오류', e.message, 'error');
     showView('blogList');
@@ -108,7 +108,7 @@ async function loadBlogPost(id) {
     document.getElementById('blogPostTitle').textContent = post.title;
     document.getElementById('blogPostDate').textContent = formatDate(post.created_at);
     document.getElementById('blogPostEditBtn').href = `/blog-edit?id=${post.id}`;
-    document.title = escHtml(post.title) + ' - ' + (window.appConfig?.wikiName || 'CloudWiki');
+    document.title = escHtml(post.title) + ' - ' + (window.appConfig?.wikiName || 'KidsWiki');
 
     // 현재 공지 발행 여부 동기화
     syncAnnounceButtons(post.id);
@@ -287,7 +287,7 @@ function getShareTitle() {
 
 async function shareNative() {
   const cleanUrl = window.location.origin + window.location.pathname;
-  const wikiName = typeof window.appConfig !== 'undefined' && window.appConfig.wikiName ? window.appConfig.wikiName : 'CloudWiki';
+  const wikiName = typeof window.appConfig !== 'undefined' && window.appConfig.wikiName ? window.appConfig.wikiName : 'KidsWiki';
   const postTitle = getShareTitle();
   try {
     await navigator.share({

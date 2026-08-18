@@ -6544,7 +6544,7 @@ if (!window._extensionDefs) window._extensionDefs = {};
 // 라이프사이클 디스패치(destroy/onThemeChange)와 _processExtensions·테마 이벤트
 // 리스너가 모두 이 번들(render.ts)에 있으므로, SDK 런타임을 여기서 window 로 노출한다.
 // 익스텐션 저작자는 `window.defineExtension(manifest, renderer)` 로 등록하며 타입은
-// public/ext/cloudwiki-ext.d.ts(앰비언트)로 제공된다. 레거시 `_extensionRenderers[name]`
+// public/ext/kidswiki-ext.d.ts(앰비언트)로 제공된다. 레거시 `_extensionRenderers[name]`
 // 직접 등록도 그대로 동작하도록 SDK 는 그 위에 additive 하게 얹는다.
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -17,7 +17,7 @@ import { ensureMcpInstantApplyMigration } from './mcpInstantApplyMigration';
  * 이 함수가 결정하지 않는다. 본 함수는 토큰을 해석해 판별 가능한 결과만 돌려주고,
  * 각 라우트가 자기 정책에 맞춰 분기한다(아래 BearerAuthResult).
  *
- * 향후 공유 패키지의 `@cloudwiki/wiki-shared/server/bearerAuth` 로 이전될 모듈이며,
+ * 향후 공유 패키지의 `@kidswiki/wiki-shared/server/bearerAuth` 로 이전될 모듈이며,
  * 그때는 각 앱이 자체 DB(mcp_api_keys/oauth_tokens)를 주입하는 형태가 된다.
  */
 

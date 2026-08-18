@@ -150,7 +150,7 @@ async function saveProfile() {
             Swal.fire({
                 icon: 'success',
                 title: '설정 완료!',
-                text: 'CloudWiki에 오신 것을 환영합니다.',
+                text: 'KidsWiki에 오신 것을 환영합니다.',
                 showConfirmButton: false,
                 timer: 1500
             }).then(() => {

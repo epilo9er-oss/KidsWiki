@@ -288,7 +288,7 @@ oauth.get('/oauth/authorize', async (c) => {
     }
 
     return c.html(consentHtml({
-        wikiName: c.env.WIKI_NAME || 'CloudWiki',
+        wikiName: c.env.WIKI_NAME || 'KidsWiki',
         userName: user.name,
         userIsAdmin: isAdmin,
         clientId: q.client_id,
@@ -655,7 +655,7 @@ ${warningHtml}
 
 function consentDeniedHtml(userName: string, wikiName: string | undefined): string {
     const safeUser = escapeHtml(userName);
-    const safeWiki = escapeHtml(wikiName || 'CloudWiki');
+    const safeWiki = escapeHtml(wikiName || 'KidsWiki');
     return `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>권한 없음 — ${safeWiki}</title>
 <style>body{font-family:'Segoe UI',system-ui,sans-serif;background:#f5f5f5;color:#1a1a1a;margin:0;padding:2rem;display:flex;justify-content:center;align-items:flex-start;min-height:100vh}.card{background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,0.10);padding:2rem;max-width:480px;width:100%}h1{font-size:1.4rem;margin:0 0 1rem;color:#b91c1c}p{line-height:1.6;color:#444}</style>
 </head><body><div class="card"><h1>접근 권한이 없습니다</h1><p><strong>${safeUser}</strong> 님은 MCP 서버에 접근할 권한이 없습니다. 권한이 있는 계정으로 로그인한 뒤 다시 시도해주세요.</p></div></body></html>`;

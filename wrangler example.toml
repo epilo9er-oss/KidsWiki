@@ -1,4 +1,4 @@
-name = "cloudwiki" # 변경가능
+name = "kidswiki" # 변경가능
 main = "src/index.ts"
 compatibility_date = "2026-03-01"
 
@@ -42,7 +42,7 @@ id = ""
 
 [[analytics_engine_datasets]]
 binding = "ANALYTICS"
-dataset = "" # 원하는 이름으로 수정
+dataset = "kidswiki" # 조회 측 하드코딩(src/routes/analytics.ts DATASET, src/index.ts FROM 절)과 반드시 일치. 바꾸려면 양쪽을 함께 수정.
 
 # === 관리자 잡 러너 Durable Object ===
 # AdminJobDO: 최고 관리자 전용 싱글턴 잡 러너 (역링크 전수 재인덱싱 / 대량 이동 / 대량 삭제).
@@ -95,7 +95,7 @@ TURNSTILE_SITE_KEY = ""
 
 MEDIA_PUBLIC_URL = "https://도메인/media"
 MAX_UPLOAD_SIZE = "15728640" # 15MB, 변경 가능
-WIKI_NAME = "Testwiki" # 변경 가능, 사이트 전역에 적용되는 위키 이름
+WIKI_NAME = "키즈위키" # 변경 가능, 사이트 전역에 적용되는 위키 이름
 
 # Public 폴더에서 해당 이미지들을 교체하세요.
 WIKI_LOGO_URL = "/favicon.jpg"

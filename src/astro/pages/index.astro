@@ -4,8 +4,8 @@
 // 단, 이 셸은 요청별 데이터(문서별 _ssrTitle/og/_usedPalettes/#ssr-data, CUSTOM_HEADER)가 있어
 // src/index.ts 의 renderHtml→applyPageSSR(ASTRO_SHELL_PAGES) 경로로 런타임 주입된다.
 // 따라서 head 의 og/description 메타와 본문 H1 의 .app-wiki-name 은 런타임 치환을 위한
-// 리터럴 placeholder("CloudWiki")로 둔다. (베이킹하면 applyPageSSR 의 부분문자열 치환이
-// 이미 베이킹된 값에 다시 적용돼 'My CloudWiki' 같은 이름에서 'My My CloudWiki' 로 중복됨.)
+// 리터럴 placeholder("KidsWiki")로 둔다. (베이킹하면 applyPageSSR 의 부분문자열 치환이
+// 이미 베이킹된 값에 다시 적용돼 'My KidsWiki' 같은 이름에서 'My My KidsWiki' 로 중복됨.)
 // CDN 번들(base/markdown)은 BaseLayout 이 PAGE_BUNDLES['/index.html'] 기준으로 베이킹.
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Header from '../components/Header.astro';
@@ -13,12 +13,12 @@ import Sidebar from '../components/Sidebar.astro';
 import Footer from '../components/Footer.astro';
 import ArticleFloatingTools from '../components/ArticleFloatingTools.astro';
 ---
-<BaseLayout pagePath="/index.html" title="CloudWiki">
+<BaseLayout pagePath="/index.html" title="KidsWiki">
     <Fragment slot="head">
-        <meta name="description" content="CloudWiki" />
-        <meta property="og:title" content="CloudWiki" />
-        <meta property="og:description" content="CloudWiki" />
-        <meta property="og:site_name" content="CloudWiki" />
+        <meta name="description" content="KidsWiki" />
+        <meta property="og:title" content="KidsWiki" />
+        <meta property="og:description" content="KidsWiki" />
+        <meta property="og:site_name" content="KidsWiki" />
         <meta property="og:type" content="website" />
         <link rel="stylesheet" href="/render.css" />
         <link rel="stylesheet" href="/css/wiki-nav.css" />
@@ -63,7 +63,7 @@ import ArticleFloatingTools from '../components/ArticleFloatingTools.astro';
       <!-- 홈(환영 페이지) -->
       <div id="homePage" class="d-none">
         <div class="wiki-welcome">
-          <h1><span class="app-wiki-name">CloudWiki</span></h1>
+          <h1><span class="app-wiki-name">KidsWiki</span></h1>
           <button class="btn btn-wiki" onclick="goNewPage()">
             <i class="bi bi-pencil-square"></i> 첫 문서 만들기
           </button>

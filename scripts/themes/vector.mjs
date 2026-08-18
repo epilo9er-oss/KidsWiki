@@ -25,7 +25,7 @@
 //  - primary-rgb·focus-ring·btn-text 를 라이트(root)·다크(dark 그룹) 양쪽 동기화.
 //  - 시맨틱색(success/warning/danger/diff/공지/callout)은 베이스 유지(블라스트 반경 최소화).
 //
-// 사용자 대면 설명 문서: Cloudwiki/설정/테마/벡터.
+// 사용자 대면 설명 문서: KidsWiki/설정/테마/벡터.
 
 /** @type {import('./index.mjs').ThemeDefinition} */
 export default {

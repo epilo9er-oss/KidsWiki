@@ -4,7 +4,7 @@
  * 전역 위키(`routes/wiki.ts`, `routes/admin-mcp.ts`)와 워크스페이스
  * (`routes/workspace.ts`, `routes/workspace-pages.ts`, `routes/ws-mcp.ts`)가 공유하는
  * 순수 검증 상수/함수다. DB/DOM 의존이 없으므로 서버·클라 공용이며, 향후 공유 패키지의
- * `@cloudwiki/wiki-shared/markup/validation` 로 이전될 모듈이다.
+ * `@kidswiki/wiki-shared/markup/validation` 로 이전될 모듈이다.
  *
  * 주의: `pages.title` 은 표시 전용 대체 제목이다. 슬러그(slug)만이 식별·링크·호출 경로의
  * 기준이며, 이 모듈의 title 검증은 표시 문자열 위생(제어문자/길이)만 담당한다.

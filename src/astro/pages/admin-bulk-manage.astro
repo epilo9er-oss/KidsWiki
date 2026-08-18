@@ -9,7 +9,7 @@ import Header from '../components/Header.astro';
 import Sidebar from '../components/Sidebar.astro';
 import Footer from '../components/Footer.astro';
 ---
-<BaseLayout pagePath="/admin-bulk-manage.html" title="관리자 콘솔 - 문서 대량 관리 - CloudWiki">
+<BaseLayout pagePath="/admin-bulk-manage.html" title="관리자 콘솔 - 문서 대량 관리 - KidsWiki">
     <Fragment slot="head">
         <link rel="stylesheet" href="/css/admin.css" />
         <link rel="stylesheet" href="/css/bulk-modal.css" />
@@ -159,14 +159,14 @@ import Footer from '../components/Footer.astro';
                             <h6 class="bulk-action-title"><i class="mdi mdi-folder-move-outline"></i> 대량 이동 (제목 변경)</h6>
                             <p class="text-muted small mb-3">
                                 선택한 문서들의 주소(slug)에서 <strong>찾을 내용</strong>을 <strong>바꿀 내용</strong>으로 치환해
-                                일괄 이동합니다. 예) 선택한 <code>Cloudwiki/개선 계획</code> 및 하위 문서에서
-                                <code>Cloudwiki</code> → <code>문서 저장소</code> 로 변경.
+                                일괄 이동합니다. 예) 선택한 <code>KidsWiki/개선 계획</code> 및 하위 문서에서
+                                <code>KidsWiki</code> → <code>문서 저장소</code> 로 변경.
                                 각 문서를 가리키던 참조 링크(<code>[[...]]</code>·<code>&#123;&#123;...&#125;&#125;</code>)도 함께 갱신할 수 있습니다.
                             </p>
                             <div class="row g-2 align-items-end">
                                 <div class="col-sm">
                                     <label class="form-label small mb-1" for="bulkMoveFind">찾을 내용</label>
-                                    <input type="text" id="bulkMoveFind" class="form-control form-control-sm" placeholder="예: Cloudwiki" />
+                                    <input type="text" id="bulkMoveFind" class="form-control form-control-sm" placeholder="예: KidsWiki" />
                                 </div>
                                 <div class="col-sm-auto text-center pb-1 d-none d-sm-block">
                                     <i class="mdi mdi-arrow-right text-muted"></i>

@@ -22,7 +22,7 @@ const branding = readBranding();
 const bundles: BundleName[] = PAGE_BUNDLES[pagePath] ?? ['base'];
 const headTags = renderHeadTags(bundles);
 const bodyScripts = renderBodyScripts(bundles);
-const bakedTitle = title.replace(/CloudWiki/g, branding.wikiName).replace(/Cloudwiki/g, branding.wikiName);
+const bakedTitle = title.replace(/KidsWiki/g, branding.wikiName);
 const customHeader = injectCustomHeader ? branding.customHeader : '';
 // 컬러 테마 스킨.
 // - 멀티 스킨 모드(WIKI_THEMES 에 2개 이상): 각 스킨을 html[data-wiki-theme] 로 스코프

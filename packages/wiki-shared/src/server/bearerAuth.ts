@@ -1,7 +1,7 @@
 /**
  * MCP Bearer 토큰 인증 공용 로직 — 앱 독립 버전.
  *
- * cloudwiki(`src/utils/mcpAuth.ts`)와 cloudspace 양쪽에서 공유하는 단일 소스.
+ * kidswiki(`src/utils/mcpAuth.ts`)와 cloudspace 양쪽에서 공유하는 단일 소스.
  * 각 앱의 Cloudflare D1 DB 바인딩을 직접 주입받아 mcp_api_keys / oauth_tokens
  * 테이블을 조회한다.
  *

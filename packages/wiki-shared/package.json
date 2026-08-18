@@ -2,7 +2,7 @@
   "name": "@eoeoe2/wiki-shared",
   "version": "1.0.0",
   "type": "module",
-  "description": "Shared renderer, editor, markup, and UI utilities for CloudWiki apps",
+  "description": "Shared renderer, editor, markup, and UI utilities for KidsWiki apps",
   "private": false,
   "exports": {
     "./markup/transclusion": "./src/markup/transclusion.ts",
@@ -43,6 +43,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/eoeoe22/cloudwiki.git"
+    "url": "git+https://github.com/epilo9er-oss/KidsWiki.git"
   }
 }

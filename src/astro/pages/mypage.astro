@@ -8,7 +8,7 @@ import Header from '../components/Header.astro';
 import Sidebar from '../components/Sidebar.astro';
 import Footer from '../components/Footer.astro';
 ---
-<BaseLayout pagePath="/mypage.html" title="내 프로필 - CloudWiki">
+<BaseLayout pagePath="/mypage.html" title="내 프로필 - KidsWiki">
     <Fragment slot="head">
         <!-- MCP 편집 승인 모달의 rendered diff 가 위키 본문을 비교 렌더링하므로
              revisions.html 과 같은 위키 렌더 스타일/diff 스타일을 함께 로드한다. -->
@@ -656,8 +656,8 @@ import Footer from '../components/Footer.astro';
                         </small>
                         <pre class="mb-0 p-2 rounded" style="background: var(--wiki-card-bg); border: 1px solid var(--wiki-border); font-family: var(--wiki-code-font); font-size: 0.82rem; overflow-x: auto; color: var(--wiki-text);"><code id="mcpApiKeyJsonSnippet">{`{
   "mcpServers": {
-    "cloudwiki": {
-      "url": "https://cloudwiki.domain/api/mcp",
+    "kidswiki": {
+      "url": "https://kidswiki.domain/api/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_API_KEY"
       }

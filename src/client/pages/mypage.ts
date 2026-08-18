@@ -1282,7 +1282,7 @@
                 const endpoint = window.location.origin + '/api/mcp';
                 jsonSnippetEl.textContent = JSON.stringify({
                     mcpServers: {
-                        cloudwiki: {
+                        kidswiki: {
                             url: endpoint,
                             headers: {
                                 Authorization: "Bearer YOUR_API_KEY"

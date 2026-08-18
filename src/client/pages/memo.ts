@@ -6,7 +6,7 @@
  * 권한·로그인 없이 누구나 위키 문법을 작성하고 실시간 프리뷰로 확인할 수 있다.
  * 일반 문서 편집과 달리:
  *   - 서버에 저장되지 않으며 어떤 문서에도 적용되지 않는다. 본문은 브라우저
- *     localStorage(`cloudwiki_memo`) 에만 보관되어 새로고침/재방문 시 복원된다.
+ *     localStorage(`kidswiki_memo`) 에만 보관되어 새로고침/재방문 시 복원된다.
  *   - 인증/Turnstile/카테고리/리다이렉트/편집 요약/저장(PUT)·섹션·충돌 해결·자동 요약이 없다.
  *   - **자동완성(edit-autocomplete) 은 의도적으로 로드하지 않는다**(요청 사양).
  *
@@ -37,7 +37,7 @@ import { snapshotPreviewState, restorePreviewState } from '../edit/preview-state
 const w = window as any;
 
 // 본문 보관 키 — 문서 슬러그가 없는 단일 메모장이라 전역 고정 키 1개를 쓴다.
-const MEMO_STORAGE_KEY = 'cloudwiki_memo';
+const MEMO_STORAGE_KEY = 'kidswiki_memo';
 // 프리뷰는 디바운스, 저장은 약간 더 길게 디바운스해 입력 중 과도한 쓰기를 피한다.
 const PREVIEW_DEBOUNCE_MS = 250;
 const SAVE_DEBOUNCE_MS = 400;

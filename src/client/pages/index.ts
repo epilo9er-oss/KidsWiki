@@ -46,7 +46,7 @@ import { createTocController } from '../article/toc';
       navigate: (href) => navigateTo(href),
       getDoc: () => currentPage,
       getSlug: () => currentSlug || '',
-      wikiName: () => (window.appConfig && window.appConfig.wikiName) || 'CloudWiki',
+      wikiName: () => (window.appConfig && window.appConfig.wikiName) || 'KidsWiki',
       canCreateSubdoc: (slug) => !!(window.currentUser && window.currentUser.permissions && window.currentUser.permissions['wiki:edit']) && !slug.includes(':'),
       onCreateSubdoc: (slug) => createSubdoc(slug),
       includeAi: true,
@@ -419,7 +419,7 @@ import { createTocController } from '../article/toc';
 
     // ── 홈(환영 페이지 대신 /w/[WIKI_NAME] 으로 이동) ──
     async function showHome() {
-      const wikiName = typeof window.appConfig !== 'undefined' && window.appConfig.wikiName ? window.appConfig.wikiName : 'CloudWiki';
+      const wikiName = typeof window.appConfig !== 'undefined' && window.appConfig.wikiName ? window.appConfig.wikiName : 'KidsWiki';
       navigateTo(`/w/${encodeURIComponent(wikiName)}`);
     }
 
@@ -471,7 +471,7 @@ import { createTocController } from '../article/toc';
       if (cfg.termsOfServiceSlug && curSlug === cfg.termsOfServiceSlug) policyLabel = '이용약관';
       else if (cfg.privacyPolicySlug && curSlug === cfg.privacyPolicySlug) policyLabel = '개인정보처리방침';
       if (!policyLabel) return;
-      const wikiName = cfg.wikiName || 'CloudWiki';
+      const wikiName = cfg.wikiName || 'KidsWiki';
       textEl.textContent = `이 문서는 ${wikiName}의 ${policyLabel} 문서입니다.`;
       bannerEl.classList.remove('d-none');
     }

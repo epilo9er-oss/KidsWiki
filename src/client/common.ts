@@ -4,7 +4,7 @@
 // 후속 Phase 4-9.1 에서 (1) Bootstrap / Swal devDeps 또는 .d.ts shim 도입,
 // (2) HTMLElement 캐스팅 정리, (3) window.* 단정 정리 후 본 디렉티브 제거 예정.
 /**
- * CloudWiki 공통 클라이언트 모듈 — 전역 변수, 인증, 테마, 알림/쪽지, 사이드바
+ * KidsWiki 공통 클라이언트 모듈 — 전역 변수, 인증, 테마, 알림/쪽지, 사이드바
  * 레이아웃, 트렌딩 / 최근 변경 사이드바 등 모든 페이지에서 공통으로 사용한다.
  *
  * Phase 4-9 마이그레이션: public/js/common.js (1,203 줄, classic) → src/client/common.ts.
@@ -72,7 +72,7 @@ function applyBsTheme(mode) {
 })();
 
 // ── 전역 변수 ──
-var appConfig = { wikiName: 'CloudWiki' };
+var appConfig = { wikiName: 'KidsWiki' };
 var currentUser = null;
 
 
