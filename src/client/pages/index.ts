@@ -615,6 +615,10 @@ import { createTocController } from '../article/toc';
       const _rawElReset = document.getElementById('articleRawContent');
       if (_rawElReset) _rawElReset.textContent = '';
 
+      // 사람 저작 배지 초기화 — SPA 네비게이션에서 이전 문서의 배지가 남지 않게 먼저 숨긴다.
+      // 실제 노출은 문서 응답을 받은 뒤 human_authored 값으로 결정한다.
+      document.getElementById('humanAuthoredBadge')?.classList.add('d-none');
+
       // 목차 섹션 및 FAB 초기화 (이전 익스텐션 문서에서 숨겨진 경우 복원)
       document.getElementById('wikiAccordion').classList.remove('d-none');
       const _tocFabBtn = document.getElementById('tocFabBtn');
@@ -1034,6 +1038,11 @@ import { createTocController } from '../article/toc';
 
         // Raw 보기용 원본 컨텐츠 갱신 — showArticle 진입 시 이미 _exitRawMode() 로 상태를 초기화했으므로
         // 여기서는 새 문서 본문만 반영하면 됨
+        // 사람 저작 배지 — 현재 리비전을 저장한 편집자의 선언이 있을 때만 노출한다.
+        // 서버가 boolean 으로 내려주므로 === true 로만 판정한다(느슨한 참값 금지).
+        const habEl = document.getElementById('humanAuthoredBadge');
+        if (habEl) habEl.classList.toggle('d-none', page.human_authored !== true);
+
         const rawEl = document.getElementById('articleRawContent');
         if (rawEl) rawEl.textContent = page.content || '';
 

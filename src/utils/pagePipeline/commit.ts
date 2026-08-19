@@ -66,6 +66,14 @@ async function writeRevision(
     state: AclResolvedState,
 ): Promise<PageMutationResult> {
     const { input } = state;
+    // "사람이 쓴 글" 선언은 사람이 편집기에서 직접 저장한 경우(http_put)에만 유효하다.
+    // 다른 origin 은 호출자가 무엇을 넘겼든 0 으로 깎는다:
+    //   - mcp_approve : AI 가 쓴 초안이다. 사람이 승인했다는 것과 사람이 썼다는 것은 다르다.
+    //   - pending_approve : 원 요청자가 편집기에서 쓴 것은 맞지만, 선언값이 pending_edits 에
+    //     보존되지 않아 승인 시점에 복원할 근거가 없다. 배지는 근거가 없으면 달지 않는다.
+    // ponytail: pending_edits 에 컬럼을 추가하면 승인 경로도 선언을 보존할 수 있다.
+    //           신뢰 배지라 "모르면 안 단다" 쪽으로 기울여 둔다.
+    const humanAuthored = input.origin === 'http_put' && input.humanAuthored === true;
     if (input.kind === 'update') {
         const res = await applyExistingPageUpdate(c, input.actor, input.page, input.content, {
             summary: input.summary,
@@ -80,6 +88,7 @@ async function writeRevision(
             logType: input.logType,
             logMessage: input.logMessage,
             awaitLinkCategoryIndex: input.awaitLinkCategoryIndex,
+            humanAuthored,
         });
         return {
             page_id: input.page.id,
@@ -102,6 +111,7 @@ async function writeRevision(
         logType: input.logType,
         logMessage: input.logMessage,
         awaitLinkCategoryIndex: input.awaitLinkCategoryIndex,
+        humanAuthored,
     });
     return {
         page_id: res.page_id,

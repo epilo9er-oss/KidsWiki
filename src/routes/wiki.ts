@@ -24,6 +24,7 @@ import { extractPageLinks } from '../shared/links';
 import { cleanupUnauthorizedSubscriptions } from '../utils/pageAccessCleanup';
 import { collectRevisionR2Keys, buildHardDeleteStatements } from '../utils/pageDeletion';
 import { commitPageMutation } from '../utils/pagePipeline/commit';
+import { ensureHumanAuthoredMigration } from '../utils/humanAuthoredMigration';
 import { withFtsRecovery } from '../utils/ftsRecovery';
 import { mergeEditSummary, capUserSummary } from '../utils/editSummary';
 import { ensurePendingEditsSummaryMigration } from '../utils/pendingEditsSummaryMigration';
@@ -1690,6 +1691,20 @@ wiki.get('/w/:slug', async (c) => {
         }
     }
 
+    // 문서 하단 "인공지능이 아닌 사람이 쓴 글" 배지용 — 현재 리비전에 남은 작성자 선언을 읽는다.
+    // pages 에 비정규화하지 않는 이유: 선언 주체(author_id)와 같은 행에 있어야 책임 소재가
+    // 편집 이력에 남는다. 공개 문서 응답은 edge 캐시(max-age=86400)를 타므로 이 추가 조회는
+    // 캐시 미스에서만 돈다.
+    let humanAuthored = false;
+    if (page.last_revision_id) {
+        await ensureHumanAuthoredMigration(db);
+        const flagRow = await db
+            .prepare('SELECT human_authored FROM revisions WHERE id = ?')
+            .bind(page.last_revision_id)
+            .first<{ human_authored: number | null }>();
+        humanAuthored = flagRow?.human_authored === 1;
+    }
+
     // 본문이 참조하는 커스텀 팔레트만 응답에 동봉 (SPA 네비게이션 시에도 정확한 팔레트로
     // 렌더되도록 — SSR 의 _usedPalettes 는 초기 페이지 첫 로드에만 유효하다).
     let usedPalettes: Record<string, unknown> = {};
@@ -1706,7 +1721,7 @@ wiki.get('/w/:slug', async (c) => {
         console.error('loadPalettesForPage failed:', e);
     }
 
-    const result = safeJSON({ ...page, redirected_from: redirectedFrom, used_palettes: usedPalettes });
+    const result = safeJSON({ ...page, redirected_from: redirectedFrom, used_palettes: usedPalettes, human_authored: humanAuthored });
 
     // 편집 메모(editor_note)는 편집기 로딩(for_edit=true) 시에만 wiki:edit 권한자에게 노출한다.
     // 일반 열람·SPA 네비게이션·검색 등에서는 응답에서 제거한다.
@@ -2016,6 +2031,12 @@ wiki.put('/w/:slug', requireAuth, requirePermission('wiki:edit'), async (c) => {
          * 키 자체가 누락된 경우 = 레거시 클라이언트 → 명시적 카테고리에 대한 자동 ACL 적용 비활성.
          */
         category_acl_choices?: Record<string, unknown>;
+        /**
+         * 작성자가 편집기에서 "인공지능이 아닌 사람이 쓴 글" 체크박스를 켰는지.
+         * 명시적 true 만 인정한다 — 서버는 이 값을 리비전에 그대로 기록하고, 문서 하단
+         * 배지의 유일한 근거가 되므로 느슨한 참값("1"/"on")을 승격시키지 않는다.
+         */
+        human_authored?: boolean;
     }>();
 
     // 대체 title 검증 — slug 와 별개로 모든 특수문자 허용하되 제어문자만 차단.
@@ -2431,6 +2452,9 @@ wiki.put('/w/:slug', requireAuth, requirePermission('wiki:edit'), async (c) => {
                 // 직접 저장 리비전은 사용자 입력분 + 자동요약분 병합본을 요약으로 쓴다.
                 summary: mergedSummary,
                 summaryRaw: true,
+                // 작성자의 "인공지능이 아닌 사람이 쓴 글" 선언. 명시적 true 만 인정한다
+                // ("1"/"on" 같은 느슨한 참값을 배지로 승격시키지 않는다).
+                humanAuthored: body.human_authored === true,
                 category: body.category || null,
                 redirectTo: body.redirect_to || null,
                 title: finalTitle,
@@ -2599,6 +2623,9 @@ wiki.put('/w/:slug', requireAuth, requirePermission('wiki:edit'), async (c) => {
                 // 직접 생성 리비전은 사용자 입력분 + 자동요약분 병합본을 요약으로 쓴다.
                 summary: mergedSummary,
                 summaryRaw: true,
+                // 작성자의 "인공지능이 아닌 사람이 쓴 글" 선언. 명시적 true 만 인정한다
+                // ("1"/"on" 같은 느슨한 참값을 배지로 승격시키지 않는다).
+                humanAuthored: body.human_authored === true,
                 category: effectiveCategory ?? null,
                 editAcl: finalEditAcl,
                 redirectTo: body.redirect_to || null,

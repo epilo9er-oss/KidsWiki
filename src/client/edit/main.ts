@@ -2935,6 +2935,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             // 편집 메모 (editor_note) — for_edit=true 로 응답에 포함됨. 없으면 빈 문자열.
             const editorNoteEl = document.getElementById('editorNoteInput') as HTMLTextAreaElement | null;
             if (editorNoteEl) editorNoteEl.value = page.editor_note || '';
+            // 사람 저작 선언 — 현재 리비전의 값을 미리 채운다. 이미 선언된 문서를 편집할 때
+            // 체크가 풀린 상태로 시작하면 저장만 해도 배지가 조용히 사라진다.
+            const humanAuthoredEl = document.getElementById('humanAuthoredInput') as HTMLInputElement | null;
+            if (humanAuthoredEl) humanAuthoredEl.checked = page.human_authored === true;
 
             // 섹션 모드에서는 서버가 보낸 메타데이터를 그대로 유지해 저장 시 함께 송신.
             // window.renderCategoryTags()가 input 이벤트를 디스패치해 자동 편집 요약을 갱신하기 전에
@@ -4155,6 +4159,10 @@ async function savePage() {
             // 카테고리 ACL 적용 모드 — chip 생성 시점에 사용자가 선택한 결과.
             // 빈 객체라도 보내야 서버가 "모던 클라이언트" 로 인식한다 (레거시 클라이언트는 키 누락 → 자동 적용 비활성).
             category_acl_choices: window.categoryAclChoices ?? {},
+            // 사람 저작 선언 — 체크 상태를 매 저장마다 그대로 보낸다(끄면 배지도 사라진다).
+            // 문서 로드 시 이전 리비전의 값으로 미리 체크되므로, 유지는 그대로 저장하면 되고
+            // 취소는 명시적으로 체크를 풀어야 한다.
+            human_authored: (document.getElementById('humanAuthoredInput') as HTMLInputElement | null)?.checked === true,
         };
 
         if (pageVersion !== null) {

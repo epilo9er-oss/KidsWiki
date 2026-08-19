@@ -38,6 +38,7 @@ import {
 import { computeLineDiffStats } from '../utils/diff';
 import { ensureMcpDraftsMigration } from '../utils/mcpDraftsMigration';
 import { ensureRevisionsVirtualMigration } from '../utils/revisionsVirtualMigration';
+import { ensureHumanAuthoredMigration } from '../utils/humanAuthoredMigration';
 import { ensureEditorNoteMigration } from '../utils/editorNoteMigration';
 import { createNotification } from '../utils/notification';
 import {
@@ -666,9 +667,14 @@ export async function applyExistingPageUpdate(
         logType?: string;             // admin_log type (예: page_update / page_patch / page_revert) — 생략 시 로그 없음
         logMessage?: string;
         awaitLinkCategoryIndex?: boolean; // true 면 page_links/page_categories 재색인을 waitUntil 대신 await — 같은 페이지에 연속 리비전을 만드는 2-리비전 승인에서 rev1 의 재색인이 rev2 의 것과 경합/역전돼 중간 리비전 인덱스가 남는 것을 막는다(rev1 에만 사용).
+        humanAuthored?: boolean;      // 작성자의 "인공지능이 아닌 사람이 쓴 글" 선언. 누락 시 0.
+                                      // commitPageMutation 이 origin 을 확인해 http_put 만 true 를 넘긴다 —
+                                      // MCP 경로는 이 값을 넘기지 않으므로 항상 0 이다.
     }
 ): Promise<{ revision_id: number; new_version: number; rows: number; characters: number }> {
     const db = c.env.DB;
+    // human_authored 컬럼이 없는 레거시 D1 에서 INSERT 가 깨지지 않도록 보장.
+    await ensureHumanAuthoredMigration(db);
     const enabledExt = getEnabledExtensions(c.env);
     const isR2Only = isR2OnlyNamespace(opts.slug, enabledExt);
     const metrics = computePageMetricsTracked(content, isR2Only);
@@ -679,8 +685,8 @@ export async function applyExistingPageUpdate(
     let revisionId: number;
     try {
         const revResult = await db
-            .prepare('INSERT INTO revisions (page_id, page_version, content, r2_key, summary, author_id) VALUES (?, ?, ?, ?, ?, ?)')
-            .bind(page.id, newVersion, '', r2Key, revisionSummary, user.id)
+            .prepare('INSERT INTO revisions (page_id, page_version, content, r2_key, summary, author_id, human_authored) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            .bind(page.id, newVersion, '', r2Key, revisionSummary, user.id, opts.humanAuthored ? 1 : 0)
             .run();
         revisionId = revResult.meta.last_row_id;
     } catch (e) {
@@ -802,9 +808,14 @@ export async function applyNewPageInsert(
         logType?: string;
         logMessage?: string;
         awaitLinkCategoryIndex?: boolean; // true 면 page_links/page_categories 재색인을 await — 2-리비전 승인의 rev1(신규 생성)에서 rev2 재색인과의 경합/역전을 막는다.
+        humanAuthored?: boolean;      // 작성자의 "인공지능이 아닌 사람이 쓴 글" 선언. 누락 시 0.
+                                      // commitPageMutation 이 origin 을 확인해 http_put 만 true 를 넘긴다 —
+                                      // MCP 경로는 이 값을 넘기지 않으므로 항상 0 이다.
     }
 ): Promise<{ page_id: number; revision_id: number; rows: number; characters: number }> {
     const db = c.env.DB;
+    // human_authored 컬럼이 없는 레거시 D1 에서 INSERT 가 깨지지 않도록 보장.
+    await ensureHumanAuthoredMigration(db);
     const enabledExt = getEnabledExtensions(c.env);
     const isR2Only = isR2OnlyNamespace(slug, enabledExt);
     const metrics = computePageMetricsTracked(content, isR2Only);
@@ -842,8 +853,8 @@ export async function applyNewPageInsert(
     let revisionId: number;
     try {
         const revResult = await db
-            .prepare('INSERT INTO revisions (page_id, page_version, content, r2_key, summary, author_id) VALUES (?, ?, ?, ?, ?, ?)')
-            .bind(pageId, 1, '', firstR2Key, opts.summaryRaw ? (opts.summary ?? null) : withMcpPrefix(opts.summary), user.id)
+            .prepare('INSERT INTO revisions (page_id, page_version, content, r2_key, summary, author_id, human_authored) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            .bind(pageId, 1, '', firstR2Key, opts.summaryRaw ? (opts.summary ?? null) : withMcpPrefix(opts.summary), user.id, opts.humanAuthored ? 1 : 0)
             .run();
         revisionId = revResult.meta.last_row_id;
     } catch (e) {

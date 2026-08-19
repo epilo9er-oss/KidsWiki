@@ -28,6 +28,12 @@ interface CommonMutationInput {
     redirectTo?: string | null;   // undefined → 기존 유지
     title?: string | null;        // undefined → 기존 유지, null → 제거, string → 설정
     editorNote?: string | null;   // undefined → 기존 유지, null/string → 덮어쓰기 (편집 메모)
+    // 작성자가 "인공지능이 아닌 사람이 쓴 글" 을 스스로 선언했는지. 리비전에 그대로 기록된다.
+    //
+    // 이 값은 origin 이 'http_put'(사람이 편집기에서 직접 저장) 일 때만 유효하다.
+    // commit.ts 의 writeRevision 이 다른 origin 을 무조건 0 으로 깎는다 — AI 가 제출한 초안
+    // (mcp_approve)이 승인만으로 "사람이 썼다" 배지를 얻는 경로를 코드로 막는 것이 목적이다.
+    humanAuthored?: boolean;
     logType?: string;
     logMessage?: string;
     awaitLinkCategoryIndex?: boolean; // 2-리비전 rev1 의 재색인을 await 해 rev2 와의 경합 방지

@@ -214,6 +214,16 @@ import ArticleFloatingTools from '../components/ArticleFloatingTools.astro';
           <!-- 본문 (Raw 보기) -->
           <pre class="wiki-content-raw" id="articleRawContent"></pre>
 
+          <!-- 사람 저작 배지 — 현재 리비전의 작성자 선언이 있을 때만 노출(index.ts 가 토글).
+               black/white 두 에셋을 함께 두고 CSS 로 테마에 맞는 쪽만 보여준다(배지 자체 색 기준). -->
+          <div class="human-authored-badge d-none" id="humanAuthoredBadge">
+            <a href="https://notbyai.fyi/" target="_blank" rel="noopener noreferrer"
+               title="이 문서를 마지막으로 저장한 편집자가 인공지능이 아닌 사람이 쓴 글임을 선언했습니다">
+              <img src="/badges/written-by-humans-black.svg" alt="인공지능이 아닌 사람들이 쓴 글" class="hab-light">
+              <img src="/badges/written-by-humans-white.svg" alt="인공지능이 아닌 사람들이 쓴 글" class="hab-dark">
+            </a>
+          </div>
+
           <!-- 백링크 -->
           <div class="backlinks-section d-none" id="backlinksSection">
             <h5><i class="bi bi-link-45deg"></i> 이 문서를 참조하는 문서</h5>

@@ -2105,6 +2105,34 @@ html[data-theme="dark"] .btn-close {
 }
 
 /* ── Home Page / Welcome ── */
+/* 사람 저작 배지 — 문서 하단. 에셋 파일명의 black/white 는 배지 자체 색이므로
+   라이트 테마엔 black, 다크 테마엔 white 를 쓴다. 색 반전 대신 두 에셋을 스왑하는 이유:
+   배지는 서드파티 마크라 filter 로 색을 건드리면 표기가 변형된다.
+   :root 기본은 라이트 → 다크 선택자에서만 뒤집는다(미디어/명시 토글 양쪽). */
+.human-authored-badge {
+  margin-top: var(--wiki-space-8);
+}
+
+.human-authored-badge img {
+  height: 32px;
+  width: auto;
+  display: block;
+}
+
+.human-authored-badge .hab-dark { display: none; }
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) .human-authored-badge .hab-light { display: none; }
+  html:not([data-theme="light"]) .human-authored-badge .hab-dark { display: block; }
+}
+
+html[data-theme="dark"] .human-authored-badge .hab-light { display: none; }
+html[data-theme="dark"] .human-authored-badge .hab-dark { display: block; }
+
+/* 편집기 체크박스 — 라벨이 두 줄 이상이라 기본 form-check 정렬로는 첫 줄만 맞는다. */
+.human-authored-check .form-check-input { margin-top: 0.3rem; }
+.human-authored-check .form-check-label small { line-height: var(--wiki-lh-relaxed); }
+
 /* 홈 환영 히어로 — 문서가 없거나 첫 방문일 때 보이는 유일한 진입면이라, 이름 한 줄만
    띄우지 않고 무엇을 할 수 있는지(작성 CTA + 기존 페이지로의 빠른 이동)까지 보여준다.
    색·모서리·서체·간격을 전부 토큰으로만 잡아 스킨 6종에서 그대로 따라오게 한다. */
