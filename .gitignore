@@ -58,6 +58,11 @@ packages/*/node_modules
 .dev.vars
 .env
 
+# 배포 설정 — 저장소가 public 인 동안은 커밋하지 않는다. OAuth 클라이언트 ID,
+# 관리자 이메일, 도메인, VAPID 공개키가 들어간다. 저장소를 private 으로 바꾸거나
+# CI 가 이 파일을 읽어야 하면(scripts/make-preview-config.mjs) 이 줄을 제거한다.
+/wrangler.toml
+
 # 브랜치 프리뷰 전용 Worker 설정 (scripts/make-preview-config.mjs 가 wrangler.toml 에서 생성)
 /wrangler.preview.toml
 
