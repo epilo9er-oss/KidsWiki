@@ -64,9 +64,16 @@ import ArticleFloatingTools from '../components/ArticleFloatingTools.astro';
       <div id="homePage" class="d-none">
         <div class="wiki-welcome">
           <h1><span class="app-wiki-name">KidsWiki</span></h1>
-          <button class="btn btn-wiki" onclick="goNewPage()">
+          <p class="wiki-welcome-lead">알고 싶은 것을 찾아보고, 아는 것을 적어 보세요.</p>
+          <button class="btn btn-wiki wiki-welcome-cta" onclick="goNewPage()">
             <i class="bi bi-pencil-square"></i> 첫 문서 만들기
           </button>
+          <!-- 빠른 이동 — 새 라우트를 만들지 않고 기존 페이지(/search·/all·/explore)로만 보낸다. -->
+          <nav class="wiki-welcome-links" aria-label="빠른 이동">
+            <a href="/search"><i class="bi bi-search" aria-hidden="true"></i> 검색하기</a>
+            <a href="/all"><i class="bi bi-collection" aria-hidden="true"></i> 모든 문서</a>
+            <a href="/explore"><i class="bi bi-compass" aria-hidden="true"></i> 둘러보기</a>
+          </nav>
         </div>
         <div class="recent-pages-section" id="recentPages"></div>
       </div>

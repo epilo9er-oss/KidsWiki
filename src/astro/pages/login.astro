@@ -25,6 +25,8 @@ import BaseLayout from '../layouts/BaseLayout.astro';
             width: 100%;
             max-width: 420px;
             padding: 3rem 2rem;
+            /* 상단 그라데이션 띠(::before)를 모서리 곡률에 맞춰 자른다. */
+            overflow: hidden;
             background: var(--wiki-glass-bg);
             backdrop-filter: var(--wiki-glass-blur);
             -webkit-backdrop-filter: var(--wiki-glass-blur);
@@ -33,6 +35,16 @@ import BaseLayout from '../layouts/BaseLayout.astro';
             box-shadow: var(--wiki-shadow-lg);
             text-align: center;
             transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        /* 카드 상단 강조 띠 — 로그인은 위키 첫인상이라 브랜드 두 색을 여기서 한 번 보여준다.
+           두 색 모두 토큰이라 스킨을 바꾸면 띠도 함께 바뀐다. */
+        .login-container::before {
+            content: "";
+            position: absolute;
+            inset: 0 0 auto 0;
+            height: 6px;
+            background: linear-gradient(90deg, var(--wiki-primary), var(--wiki-accent));
         }
 
         .login-container:hover {
@@ -56,7 +68,9 @@ import BaseLayout from '../layouts/BaseLayout.astro';
             font-weight: 700;
             color: var(--wiki-text);
             margin-bottom: 0.5rem;
-            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            /* 테마 제목 서체를 따른다(스킨이 --wiki-font-heading 을 덮으면 함께 바뀜).
+               리터럴 'Outfit' 을 박아두면 스킨의 제목 서체가 이 문구만 비껴간다. */
+            font-family: var(--wiki-font-heading);
         }
 
         .message-text {

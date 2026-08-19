@@ -2105,11 +2105,79 @@ html[data-theme="dark"] .btn-close {
 }
 
 /* ── Home Page / Welcome ── */
+/* 홈 환영 히어로 — 문서가 없거나 첫 방문일 때 보이는 유일한 진입면이라, 이름 한 줄만
+   띄우지 않고 무엇을 할 수 있는지(작성 CTA + 기존 페이지로의 빠른 이동)까지 보여준다.
+   색·모서리·서체·간격을 전부 토큰으로만 잡아 스킨 6종에서 그대로 따라오게 한다. */
+.wiki-welcome {
+  text-align: center;
+  padding: var(--wiki-space-10) var(--wiki-space-4);
+}
+
 .wiki-welcome h1 {
   color: var(--wiki-text);
   text-shadow: none;
   /* Embossed Text 제거, 깔끔한 플랫 */
   font-weight: 800;
+  font-family: var(--wiki-font-heading);
+  margin-bottom: var(--wiki-space-3);
+}
+
+.wiki-welcome-lead {
+  color: var(--wiki-text-muted);
+  font-size: var(--wiki-fs-lg);
+  line-height: var(--wiki-lh-relaxed);
+  max-width: 42ch;
+  margin: 0 auto var(--wiki-space-6);
+  /* 한국어는 기본 줄바꿈이 어절 안에서도 끊긴다("...적어 보세/요."). keep-all 로 어절을
+     보존하고, 줄 길이는 balance 로 고르게 나눈다(미지원 브라우저는 무시하고 keep-all 만 적용). */
+  word-break: keep-all;
+  text-wrap: balance;
+}
+
+/* 첫 문서 CTA — 홈의 유일한 주요 행동이라 기본 btn-wiki 보다 크고 채운 알약으로 둔다. */
+.wiki-welcome-cta {
+  background: var(--wiki-primary);
+  color: var(--wiki-btn-text);
+  border-color: transparent;
+  border-radius: var(--wiki-radius-full);
+  padding: var(--wiki-space-3) var(--wiki-space-6);
+  font-size: var(--wiki-fs-md);
+}
+
+.wiki-welcome-cta:hover {
+  background: var(--wiki-primary-hover);
+  color: var(--wiki-btn-text);
+  border-color: transparent;
+}
+
+.wiki-welcome-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--wiki-space-2);
+  margin-top: var(--wiki-space-8);
+}
+
+.wiki-welcome-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wiki-space-2);
+  padding: var(--wiki-space-2) var(--wiki-space-4);
+  border: 1px solid var(--wiki-border);
+  border-radius: var(--wiki-radius-full);
+  background: var(--wiki-card-bg);
+  color: var(--wiki-text);
+  font-size: var(--wiki-fs-sm);
+  font-weight: 600;
+  text-decoration: none;
+  transition: all var(--wiki-dur-fast) var(--wiki-ease);
+}
+
+.wiki-welcome-links a:hover,
+.wiki-welcome-links a:focus-visible {
+  border-color: var(--wiki-primary);
+  color: var(--wiki-primary);
+  transform: translateY(-2px);
 }
 
 .recent-page-card {
