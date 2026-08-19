@@ -1,0 +1,13 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="키즈위키">
+  <!-- 파비콘 전용 단순화 마크(16px 가독성 우선) — logo.svg 의 반짝임·페이지 투명도를 걷어내고
+       굵은 책 실루엣만 남긴다. 색은 kids.mjs 의 primary/accent 와 동일. -->
+  <defs>
+    <linearGradient id="kidsFav" x1="4" y1="4" x2="60" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c2255c"/>
+      <stop offset="1" stop-color="#7048c6"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#kidsFav)"/>
+  <path d="M32 21c-5-4-11.5-5.5-18.5-4.5-2 .3-3.5 2-3.5 4v22c0 2.4 2.1 4.2 4.5 3.9 5.6-.7 11 .5 17.5 4V21z" fill="#ffffff"/>
+  <path d="M32 21c5-4 11.5-5.5 18.5-4.5 2 .3 3.5 2 3.5 4v22c0 2.4-2.1 4.2-4.5 3.9-5.6-.7-11 .5-17.5 4V21z" fill="#ffffff"/>
+</svg>

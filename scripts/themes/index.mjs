@@ -30,6 +30,7 @@ import astro from './astro.mjs';
 import vector from './vector.mjs';
 import bootstrap from './bootstrap.mjs';
 import via from './via.mjs';
+import kids from './kids.mjs';
 
 /**
  * @typedef {Object} ThemeDefinition
@@ -197,6 +198,7 @@ export const THEMES = {
     vector,
     bootstrap,
     via,
+    kids,
 };
 
 /**
@@ -212,6 +214,7 @@ export const THEME_LABELS = {
     vector: '벡터',
     bootstrap: 'Bootstrap',
     via: 'VIA',
+    kids: '키즈',
 };
 
 /** 객체 토큰 맵을 `--k: v;` 선언 문자열로 직렬화 */
