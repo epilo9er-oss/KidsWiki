@@ -130,7 +130,7 @@ export function applyPageSSR(response: Response, pageData: Record<string, any>, 
         .on('.wiki-logo-container', {
             element(element) {
                 if (wikiLogoUrl) {
-                    element.setInnerContent(`<img src="${escapeHtml(wikiLogoUrl)}" alt="Logo" class="brand-logo" style="height: 32px; vertical-align: middle; margin-right: 8px;">`, { html: true });
+                    element.setInnerContent(`<img src="${escapeHtml(wikiLogoUrl)}" alt="Logo" class="brand-logo" style="height: 40px; vertical-align: middle; margin-right: 8px;">`, { html: true });
                 }
             }
         })

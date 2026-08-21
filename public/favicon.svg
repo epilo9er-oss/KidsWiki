@@ -1,13 +1,14 @@
 <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="키즈위키">
-  <!-- 파비콘 전용 단순화 마크(16px 가독성 우선) — logo.svg 의 반짝임·페이지 투명도를 걷어내고
-       굵은 책 실루엣만 남긴다. 색은 kids.mjs 의 primary/accent 와 동일. -->
+  <!-- 파비콘 전용 단순화 마크. brand/kiwi-mark.png 를 축소한 게 아니다 —
+       원본의 로우폴리 면과 16개 씨앗 고리는 16px 에서 초록 덩어리로 뭉개진다(브라우저 측정 확인).
+       16px 에 남는 정보인 "초록 둥근 다각형 + 밝은 중심" 만 크게 잡았다.
+       7각형인 이유: 원본 실루엣에 가깝고, 내접반지름이 R·cos(π/7)≈0.90R 라 씨앗 고리가
+       변을 넘지 않는다(정삼각형은 내접이 R/2 라 씨앗이 변 밖으로 삐져나갔다). -->
   <defs>
-    <linearGradient id="kidsFav" x1="4" y1="4" x2="60" y2="60" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#c2255c"/>
-      <stop offset="1" stop-color="#7048c6"/>
-    </linearGradient>
+    <clipPath id="kiwiBody"><path d="M27.5,6.2 Q32.0,4.0 36.5,6.2 L49.4,12.4 Q53.9,14.5 55.0,19.4 L58.2,33.4 Q59.3,38.2 56.2,42.1 L47.3,53.3 Q44.1,57.2 39.1,57.2 L24.9,57.2 Q19.9,57.2 16.7,53.3 L7.8,42.1 Q4.7,38.2 5.8,33.4 L9.0,19.4 Q10.1,14.5 14.6,12.4 Z"/></clipPath>
   </defs>
-  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#kidsFav)"/>
-  <path d="M32 21c-5-4-11.5-5.5-18.5-4.5-2 .3-3.5 2-3.5 4v22c0 2.4 2.1 4.2 4.5 3.9 5.6-.7 11 .5 17.5 4V21z" fill="#ffffff"/>
-  <path d="M32 21c5-4 11.5-5.5 18.5-4.5 2 .3 3.5 2 3.5 4v22c0 2.4-2.1 4.2-4.5 3.9-5.6-.7-11 .5-17.5 4V21z" fill="#ffffff"/>
+  <path d="M27.5,6.2 Q32.0,4.0 36.5,6.2 L49.4,12.4 Q53.9,14.5 55.0,19.4 L58.2,33.4 Q59.3,38.2 56.2,42.1 L47.3,53.3 Q44.1,57.2 39.1,57.2 L24.9,57.2 Q19.9,57.2 16.7,53.3 L7.8,42.1 Q4.7,38.2 5.8,33.4 L9.0,19.4 Q10.1,14.5 14.6,12.4 Z" fill="#8fbc45"/>
+  <path d="M32,58 L10.5,44.5 L15,32 L32,32 Z" fill="#5f7233" opacity="0.45" clip-path="url(#kiwiBody)"/>
+  <g fill="#23261c"><ellipse cx="32.0" cy="19.0" rx="1.9" ry="3.1" transform="rotate(0 32.0 19.0)"/><ellipse cx="41.2" cy="22.8" rx="1.9" ry="3.1" transform="rotate(45 41.2 22.8)"/><ellipse cx="45.0" cy="32.0" rx="1.9" ry="3.1" transform="rotate(90 45.0 32.0)"/><ellipse cx="41.2" cy="41.2" rx="1.9" ry="3.1" transform="rotate(135 41.2 41.2)"/><ellipse cx="32.0" cy="45.0" rx="1.9" ry="3.1" transform="rotate(180 32.0 45.0)"/><ellipse cx="22.8" cy="41.2" rx="1.9" ry="3.1" transform="rotate(225 22.8 41.2)"/><ellipse cx="19.0" cy="32.0" rx="1.9" ry="3.1" transform="rotate(270 19.0 32.0)"/><ellipse cx="22.8" cy="22.8" rx="1.9" ry="3.1" transform="rotate(315 22.8 22.8)"/></g>
+  <ellipse cx="32" cy="32" rx="7.5" ry="8.8" fill="#f7f5e8"/>
 </svg>

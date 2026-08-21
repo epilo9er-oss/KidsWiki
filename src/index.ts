@@ -86,7 +86,7 @@ function isBannedAllowedRequest(c: Context<Env>): boolean {
         path.startsWith('/dist/') || path.startsWith('/css/') || path.startsWith('/components/') ||
         path === '/sw.js' || path === '/robots.txt' || path === '/sitemap.xml' ||
         path === '/icons.json' || path === '/favicon.ico' || path === '/favicon.jpg' ||
-        path === '/favicon.png' || path === '/favicon.svg' || path === '/logo.svg'
+        path === '/favicon.png' || path === '/favicon.svg' || path.startsWith('/brand/')
     ) return true;
     // 2) OAuth / discovery — banned 유저가 굳이 호출할 필요는 없지만 차단할 이유도 없다.
     if (path.startsWith('/.well-known/') || path.startsWith('/oauth/')) return true;

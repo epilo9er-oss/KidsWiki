@@ -2108,6 +2108,16 @@ html[data-theme="dark"] .btn-close {
 }
 
 /* ── Home Page / Welcome ── */
+/* 헤더 브랜드 마크 받침 — 마크의 초록이 '키위 과육' 헤더색과 거의 같아 그대로 두면 묻힌다.
+   지면색(--wiki-bg) 원형 받침을 깔아 5종 스킨 모두에서 실루엣을 분리한다. 흰 헤더(키위 단면)
+   에서는 받침이 지면과 사실상 같은 색이라 보이지 않으므로 부작용이 없다. */
+.brand-logo {
+  background: var(--wiki-bg);
+  border-radius: 50%;
+  padding: 3px;
+  box-sizing: content-box;
+}
+
 /* 사람 저작 배지 — 문서 하단. 에셋 파일명의 black/white 는 배지 자체 색이므로
    라이트 테마엔 black, 다크 테마엔 white 를 쓴다. 색 반전 대신 두 에셋을 스왑하는 이유:
    배지는 서드파티 마크라 filter 로 색을 건드리면 표기가 변형된다.
@@ -2151,6 +2161,15 @@ html[data-theme="dark"] .human-authored-badge .hab-dark { display: block; }
   font-weight: 800;
   font-family: var(--wiki-font-heading);
   margin-bottom: var(--wiki-space-3);
+}
+
+/* 홈 히어로 워드마크 — 이름 텍스트 대신 브랜드 그림을 세운다. 원본 비율 1774:887 을
+   유지하고 좁은 화면에서 줄어들도록 max-width 로만 제한한다(고정 폭 금지). */
+.wiki-welcome-wordmark {
+  display: block;
+  width: min(360px, 72vw);
+  height: auto;
+  margin: 0 auto var(--wiki-space-2);
 }
 
 .wiki-welcome-lead {
