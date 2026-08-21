@@ -466,6 +466,43 @@ div:where(.swal2-container) .swal2-validation-message {
   margin-top: var(--wiki-space-2);
 }
 
+/* 데스크톱: 검색을 브랜드 옆으로 올려 헤더를 한 줄로 만든다.
+   기본값(위)은 flex-basis:100% + order:10 이라 검색폼이 통째로 다음 줄로 밀리고, 그 결과
+   헤더가 124px 를 먹으면서 색이 덮는 면적도 두 배가 된다. 검색어는 길어야 열 글자 안팎이라
+   1300px 짜리 입력은 대부분 빈 공간이었다.
+
+   마크업은 건드리지 않고 order 로만 재배치한다 — header.html 의 검색폼에는 인라인 자동완성
+   스크립트가 붙어 있어 DOM 순서를 옮기면 그 스크립트까지 따라 움직인다.
+   모바일(<992px)은 기존 2줄 배치를 유지한다. 좁은 화면에서 한 줄에 넣으면 입력이 너무 좁다. */
+@media (min-width: 992px) {
+  .navbar > .container-fluid {
+    flex-wrap: nowrap;
+  }
+
+  .navbar-brand {
+    order: 1;
+    margin-right: var(--wiki-space-5) !important;
+  }
+
+  .nav-search-form {
+    order: 2;
+    flex: 1 1 auto;
+    max-width: 420px;
+    margin-top: 0;
+    /* 뒤따르는 버튼들을 오른쪽 끝으로 민다(브랜드의 me-auto 를 대체). */
+    margin-right: auto;
+  }
+
+  /* order 를 명시하지 않으면 기본값 0 이라 브랜드(1)·검색(2)보다 앞으로 나온다.
+     실제로 그렇게 돼서 설정·로그인 버튼이 로고 왼쪽에 붙었다(렌더 확인 후 수정). */
+  .navbar #navUser,
+  .navbar #navSettings,
+  .navbar #navLogin,
+  .navbar .navbar-toggler {
+    order: 3;
+  }
+}
+
 .nav-search-form .form-control {
   border-radius: var(--wiki-radius-sm) 0 0 var(--wiki-radius-sm);
   color: var(--wiki-text);
@@ -2198,6 +2235,57 @@ html[data-theme="dark"] .human-authored-badge .hab-dark { display: block; }
   background: var(--wiki-primary-hover);
   color: var(--wiki-btn-text);
   border-color: transparent;
+}
+
+/* 연령 × 주제 진입 칩 — 홈의 주 탐색면. 라벨과 칩을 한 줄에 두되 좁아지면 접힌다.
+   빠른 이동 링크(.wiki-welcome-links)보다 위에 오고 시각적으로도 더 무겁다 — 이쪽이
+   부모가 실제로 쓰는 경로이고, 아래 링크는 보조 출구다. */
+.wiki-welcome-browse {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wiki-space-3);
+  margin-top: var(--wiki-space-8);
+  text-align: left;
+  max-width: 44rem;
+  margin-inline: auto;
+}
+
+.wiki-welcome-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wiki-space-2);
+}
+
+.wiki-welcome-chips-label {
+  flex: none;
+  width: 5.5rem;
+  font-size: var(--wiki-fs-sm);
+  font-weight: 700;
+  color: var(--wiki-text-muted);
+}
+
+.wiki-welcome-chips a {
+  padding: var(--wiki-space-2) var(--wiki-space-4);
+  border: 1px solid var(--wiki-border);
+  border-radius: var(--wiki-radius-full);
+  background: var(--wiki-card-bg);
+  color: var(--wiki-text);
+  font-size: var(--wiki-fs-sm);
+  font-weight: 600;
+  text-decoration: none;
+  transition: all var(--wiki-dur-fast) var(--wiki-ease);
+}
+
+.wiki-welcome-chips a:hover,
+.wiki-welcome-chips a:focus-visible {
+  border-color: var(--wiki-primary);
+  background: var(--wiki-primary);
+  color: var(--wiki-btn-text);
+}
+
+@media (max-width: 560px) {
+  .wiki-welcome-chips-label { width: 100%; }
 }
 
 .wiki-welcome-links {

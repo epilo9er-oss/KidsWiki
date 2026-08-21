@@ -76,6 +76,28 @@ import ArticleFloatingTools from '../components/ArticleFloatingTools.astro';
           <button class="btn btn-wiki wiki-welcome-cta" onclick="goNewPage()">
             <i class="bi bi-pencil-square"></i> 첫 문서 만들기
           </button>
+          <!-- 연령 × 주제 진입 — 부모는 "7개월 이유식", "돌 예방접종" 처럼 구체적 상황을 갖고
+               들어온다. 카테고리 페이지로 보내므로 데이터가 없어도(문서 0개) 그대로 동작하고,
+               문서가 쌓이면 이 칩이 그대로 분류 체계가 된다. 새 라우트를 만들지 않는다. -->
+          <div class="wiki-welcome-browse">
+            <nav class="wiki-welcome-chips" aria-label="월령·연령으로 찾기">
+              <span class="wiki-welcome-chips-label">월령 · 연령</span>
+              <a href="/w/category/0~6%EA%B0%9C%EC%9B%94">0~6개월</a>
+              <a href="/w/category/7~12%EA%B0%9C%EC%9B%94">7~12개월</a>
+              <a href="/w/category/1~3%EC%84%B8">1~3세</a>
+              <a href="/w/category/4~6%EC%84%B8">4~6세</a>
+              <a href="/w/category/%EC%B4%88%EB%93%B1">초등</a>
+            </nav>
+            <nav class="wiki-welcome-chips" aria-label="주제로 찾기">
+              <span class="wiki-welcome-chips-label">주제</span>
+              <a href="/w/category/%EC%88%98%EC%9C%A0%C2%B7%EC%9D%B4%EC%9C%A0%EC%8B%9D">수유·이유식</a>
+              <a href="/w/category/%EC%88%98%EB%A9%B4">수면</a>
+              <a href="/w/category/%EB%B0%9C%EB%8B%AC">발달</a>
+              <a href="/w/category/%EC%98%88%EB%B0%A9%EC%A0%91%EC%A2%85">예방접종</a>
+              <a href="/w/category/%EC%95%88%EC%A0%84">안전</a>
+            </nav>
+          </div>
+
           <!-- 빠른 이동 — 새 라우트를 만들지 않고 기존 페이지(/search·/all·/explore)로만 보낸다. -->
           <nav class="wiki-welcome-links" aria-label="빠른 이동">
             <a href="/search"><i class="bi bi-search" aria-hidden="true"></i> 검색하기</a>
