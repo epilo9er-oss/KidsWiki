@@ -66,9 +66,10 @@ export const CDN_URLS = {
 
 export const FONTS = {
     preconnect: ['https://fonts.googleapis.com', 'https://fonts.gstatic.com'] as const,
-    // 모든 페이지 공통: Inter + Outfit + Montserrat + Noto Sans KR + Noto Serif KR 슈퍼셋
-    // (Noto Serif KR 은 세리프 계열 테마/스킨용; Montserrat 은 'VIA' 스킨의 본문/제목 글꼴)
-    ui:   'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800;900&family=Montserrat:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;600;700;800;900&family=Noto+Serif+KR:wght@400;500;600;700&display=swap',
+    // 모든 페이지 공통: Inter + Outfit + Montserrat + Jua + Noto Sans KR + Noto Serif KR 슈퍼셋
+    // (Noto Serif KR 은 세리프 계열 테마/스킨용; Montserrat 은 'VIA' 스킨의 본문/제목 글꼴;
+    //  Jua 는 '키즈' 스킨의 제목 글꼴 — 한글 포함, weight 400 단독)
+    ui:   'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800;900&family=Montserrat:wght@400;500;600;700;800&family=Jua&family=Noto+Sans+KR:wght@300;400;500;600;700;800;900&family=Noto+Serif+KR:wght@400;500;600;700&display=swap',
     // 코드블럭 전용 폰트 (render.ts에서 동적 주입)
     code: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Nanum+Gothic+Coding:wght@400;700&display=swap',
 } as const;

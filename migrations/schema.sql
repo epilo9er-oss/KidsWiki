@@ -118,6 +118,12 @@ CREATE TABLE IF NOT EXISTS revisions (
   deleted_at   INTEGER,
   purged_at    INTEGER,
   is_virtual   INTEGER NOT NULL DEFAULT 0,
+  -- 작성자가 "인공지능이 아닌 사람이 쓴 글" 을 스스로 선언한 리비전 플래그.
+  -- 문서가 아니라 리비전에 두는 이유: 선언 주체가 author_id 와 같은 행에 남아야
+  -- 책임 소재가 편집 이력에 기록된다. 문서 하단 배지는 현재 리비전의 값으로 표시하므로,
+  -- 선언은 "저장 시점의 본문 전체"에 대한 그 편집자의 주장으로 읽힌다.
+  -- 직접 편집(origin http_put)만 1 을 쓸 수 있다 — MCP 경로는 절대 세우지 못한다.
+  human_authored INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (page_id) REFERENCES pages(id),
   FOREIGN KEY (author_id) REFERENCES users(id)
 );

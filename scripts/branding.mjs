@@ -156,7 +156,7 @@ export function readBranding() {
 // ── 컴포넌트/셸 HTML 마커 베이킹 ──
 
 const LOGO_IMG = (logoUrl) =>
-    `<img src="${escapeHtml(logoUrl)}" alt="Logo" class="brand-logo" style="height: 32px; vertical-align: middle; margin-right: 8px;">`;
+    `<img src="${escapeHtml(logoUrl)}" alt="Logo" class="brand-logo" style="height: 40px; vertical-align: middle; margin-right: 8px;">`;
 
 /**
  * 컴포넌트/페이지 HTML 의 브랜딩 마커를 빌드 타임에 실제 값으로 치환한다.

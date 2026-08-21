@@ -30,6 +30,12 @@ import astro from './astro.mjs';
 import vector from './vector.mjs';
 import bootstrap from './bootstrap.mjs';
 import via from './via.mjs';
+// 키위 스킨 5종 — 색만 정의한다(서체·모서리·행간은 style.css :root 브랜드 기준선).
+import kiwiSlice from './kiwi-slice.mjs';
+import kiwiFlesh from './kiwi-flesh.mjs';
+import kiwiSkin from './kiwi-skin.mjs';
+import kiwiGold from './kiwi-gold.mjs';
+import sage from './sage.mjs';
 
 /**
  * @typedef {Object} ThemeDefinition
@@ -197,6 +203,11 @@ export const THEMES = {
     vector,
     bootstrap,
     via,
+    'kiwi-slice': kiwiSlice,
+    'kiwi-flesh': kiwiFlesh,
+    'kiwi-skin': kiwiSkin,
+    'kiwi-gold': kiwiGold,
+    sage,
 };
 
 /**
@@ -212,6 +223,11 @@ export const THEME_LABELS = {
     vector: '벡터',
     bootstrap: 'Bootstrap',
     via: 'VIA',
+    'kiwi-slice': '키위 단면',
+    'kiwi-flesh': '키위 과육',
+    'kiwi-skin': '키위 껍질',
+    'kiwi-gold': '골드키위',
+    sage: '세이지',
 };
 
 /** 객체 토큰 맵을 `--k: v;` 선언 문자열로 직렬화 */

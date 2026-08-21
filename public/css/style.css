@@ -89,8 +89,11 @@
      → default 무변화). 스킨이 --wiki-font-body/-heading 만 덮으면 세리프/디스플레이 등으로
      체감 변화를 크게 줄 수 있다. 웹폰트가 필요하면 src/shared/cdn.ts FONTS.ui 에 패밀리를
      추가하고, 항상 시스템/웹세이프 폴백을 둔다. (코드 글꼴은 위 --wiki-code-font 재사용.) */
-  --wiki-font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --wiki-font-heading: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  /* 키위 브랜드 기준선 — 제목은 둥근 한글 서체(Jua), 본문은 가독성 우선 Noto Sans KR.
+     스킨(scripts/themes/*.mjs)이 아니라 여기 두는 이유: 5종 스킨이 색만 다르고 서체·모서리·
+     행간은 브랜드 공통이라 스킨마다 복제하면 드리프트만 생긴다. */
+  --wiki-font-body: 'Noto Sans KR', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --wiki-font-heading: 'Jua', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
   /* 코드 표면색 — 본문(Prism 렌더) / 에디터(CodeMirror) 표면을 한 곳에서 관리.
      값은 기존과 바이트 동일(무변화 단일소스). 구문 하이라이트 팔레트
@@ -142,13 +145,13 @@
 
   /* 반경 (radii) — DESIGN.md radii */
   --wiki-radius-none: 0;
-  --wiki-radius-xs: 3px;
-  --wiki-radius-sm: 4px;
-  --wiki-radius-md: 5px;
-  --wiki-radius-base: 6px;
-  --wiki-radius-lg: 8px;
-  --wiki-radius-xl: 10px;
-  --wiki-radius-2xl: 20px;
+  --wiki-radius-xs: 6px;
+  --wiki-radius-sm: 10px;
+  --wiki-radius-md: 12px;
+  --wiki-radius-base: 14px;
+  --wiki-radius-lg: 18px;
+  --wiki-radius-xl: 24px;
+  --wiki-radius-2xl: 32px;
   --wiki-radius-full: 9999px;
 
   /* 간격 (spacing) — DESIGN.md spacing (4px 베이스 + 구조 레이아웃 값) */
@@ -156,7 +159,7 @@
   --wiki-space-1: 0.25rem;
   --wiki-space-2: 0.5rem;
   --wiki-space-3: 0.75rem;
-  --wiki-space-4: 1rem;
+  --wiki-space-4: 1.1rem;
   --wiki-space-5: 1.25rem;
   --wiki-space-6: 1.5rem;
   --wiki-space-8: 2rem;
@@ -191,8 +194,8 @@
   --wiki-lh-snug: 1.3;
   --wiki-lh-normal: 1.5;
   --wiki-lh-relaxed: 1.6;
-  --wiki-lh-loose: 1.7;
-  --wiki-lh-spacious: 1.8;
+  --wiki-lh-loose: 1.8;
+  --wiki-lh-spacious: 1.9;
 
   /* 모션 duration — DESIGN.md motion (easing 은 위 --wiki-ease* 재사용) */
   --wiki-dur-instant: 0.15s;
@@ -461,6 +464,43 @@ div:where(.swal2-container) .swal2-validation-message {
   order: 10;
   max-width: 100%;
   margin-top: var(--wiki-space-2);
+}
+
+/* 데스크톱: 검색을 브랜드 옆으로 올려 헤더를 한 줄로 만든다.
+   기본값(위)은 flex-basis:100% + order:10 이라 검색폼이 통째로 다음 줄로 밀리고, 그 결과
+   헤더가 124px 를 먹으면서 색이 덮는 면적도 두 배가 된다. 검색어는 길어야 열 글자 안팎이라
+   1300px 짜리 입력은 대부분 빈 공간이었다.
+
+   마크업은 건드리지 않고 order 로만 재배치한다 — header.html 의 검색폼에는 인라인 자동완성
+   스크립트가 붙어 있어 DOM 순서를 옮기면 그 스크립트까지 따라 움직인다.
+   모바일(<992px)은 기존 2줄 배치를 유지한다. 좁은 화면에서 한 줄에 넣으면 입력이 너무 좁다. */
+@media (min-width: 992px) {
+  .navbar > .container-fluid {
+    flex-wrap: nowrap;
+  }
+
+  .navbar-brand {
+    order: 1;
+    margin-right: var(--wiki-space-5) !important;
+  }
+
+  .nav-search-form {
+    order: 2;
+    flex: 1 1 auto;
+    max-width: 420px;
+    margin-top: 0;
+    /* 뒤따르는 버튼들을 오른쪽 끝으로 민다(브랜드의 me-auto 를 대체). */
+    margin-right: auto;
+  }
+
+  /* order 를 명시하지 않으면 기본값 0 이라 브랜드(1)·검색(2)보다 앞으로 나온다.
+     실제로 그렇게 돼서 설정·로그인 버튼이 로고 왼쪽에 붙었다(렌더 확인 후 수정). */
+  .navbar #navUser,
+  .navbar #navSettings,
+  .navbar #navLogin,
+  .navbar .navbar-toggler {
+    order: 3;
+  }
 }
 
 .nav-search-form .form-control {
@@ -2105,11 +2145,177 @@ html[data-theme="dark"] .btn-close {
 }
 
 /* ── Home Page / Welcome ── */
+/* 헤더 브랜드 마크 받침 — 마크의 초록이 '키위 과육' 헤더색과 거의 같아 그대로 두면 묻힌다.
+   지면색(--wiki-bg) 원형 받침을 깔아 5종 스킨 모두에서 실루엣을 분리한다. 흰 헤더(키위 단면)
+   에서는 받침이 지면과 사실상 같은 색이라 보이지 않으므로 부작용이 없다. */
+.brand-logo {
+  background: var(--wiki-bg);
+  border-radius: 50%;
+  padding: 3px;
+  box-sizing: content-box;
+}
+
+/* 사람 저작 배지 — 문서 하단. 에셋 파일명의 black/white 는 배지 자체 색이므로
+   라이트 테마엔 black, 다크 테마엔 white 를 쓴다. 색 반전 대신 두 에셋을 스왑하는 이유:
+   배지는 서드파티 마크라 filter 로 색을 건드리면 표기가 변형된다.
+   :root 기본은 라이트 → 다크 선택자에서만 뒤집는다(미디어/명시 토글 양쪽). */
+.human-authored-badge {
+  margin-top: var(--wiki-space-8);
+}
+
+.human-authored-badge img {
+  height: 32px;
+  width: auto;
+  display: block;
+}
+
+.human-authored-badge .hab-dark { display: none; }
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) .human-authored-badge .hab-light { display: none; }
+  html:not([data-theme="light"]) .human-authored-badge .hab-dark { display: block; }
+}
+
+html[data-theme="dark"] .human-authored-badge .hab-light { display: none; }
+html[data-theme="dark"] .human-authored-badge .hab-dark { display: block; }
+
+/* 편집기 체크박스 — 라벨이 두 줄 이상이라 기본 form-check 정렬로는 첫 줄만 맞는다. */
+.human-authored-check .form-check-input { margin-top: 0.3rem; }
+.human-authored-check .form-check-label small { line-height: var(--wiki-lh-relaxed); }
+
+/* 홈 환영 히어로 — 문서가 없거나 첫 방문일 때 보이는 유일한 진입면이라, 이름 한 줄만
+   띄우지 않고 무엇을 할 수 있는지(작성 CTA + 기존 페이지로의 빠른 이동)까지 보여준다.
+   색·모서리·서체·간격을 전부 토큰으로만 잡아 스킨 6종에서 그대로 따라오게 한다. */
+.wiki-welcome {
+  text-align: center;
+  padding: var(--wiki-space-10) var(--wiki-space-4);
+}
+
 .wiki-welcome h1 {
   color: var(--wiki-text);
   text-shadow: none;
   /* Embossed Text 제거, 깔끔한 플랫 */
   font-weight: 800;
+  font-family: var(--wiki-font-heading);
+  margin-bottom: var(--wiki-space-3);
+}
+
+/* 홈 히어로 시그니처(심볼+워드마크) — 이름 텍스트 대신 브랜드 그림을 세운다. 원본 비율 1774:887 을
+   유지하고 좁은 화면에서 줄어들도록 max-width 로만 제한한다(고정 폭 금지). */
+.wiki-welcome-signature {
+  display: block;
+  width: min(360px, 72vw);
+  height: auto;
+  margin: 0 auto var(--wiki-space-2);
+}
+
+.wiki-welcome-lead {
+  color: var(--wiki-text-muted);
+  font-size: var(--wiki-fs-lg);
+  line-height: var(--wiki-lh-relaxed);
+  max-width: 42ch;
+  margin: 0 auto var(--wiki-space-6);
+  /* 한국어는 기본 줄바꿈이 어절 안에서도 끊긴다("...적어 보세/요."). keep-all 로 어절을
+     보존하고, 줄 길이는 balance 로 고르게 나눈다(미지원 브라우저는 무시하고 keep-all 만 적용). */
+  word-break: keep-all;
+  text-wrap: balance;
+}
+
+/* 첫 문서 CTA — 홈의 유일한 주요 행동이라 기본 btn-wiki 보다 크고 채운 알약으로 둔다. */
+.wiki-welcome-cta {
+  background: var(--wiki-primary);
+  color: var(--wiki-btn-text);
+  border-color: transparent;
+  border-radius: var(--wiki-radius-full);
+  padding: var(--wiki-space-3) var(--wiki-space-6);
+  font-size: var(--wiki-fs-md);
+}
+
+.wiki-welcome-cta:hover {
+  background: var(--wiki-primary-hover);
+  color: var(--wiki-btn-text);
+  border-color: transparent;
+}
+
+/* 연령 × 주제 진입 칩 — 홈의 주 탐색면. 라벨과 칩을 한 줄에 두되 좁아지면 접힌다.
+   빠른 이동 링크(.wiki-welcome-links)보다 위에 오고 시각적으로도 더 무겁다 — 이쪽이
+   부모가 실제로 쓰는 경로이고, 아래 링크는 보조 출구다. */
+.wiki-welcome-browse {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wiki-space-3);
+  margin-top: var(--wiki-space-8);
+  text-align: left;
+  max-width: 44rem;
+  margin-inline: auto;
+}
+
+.wiki-welcome-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wiki-space-2);
+}
+
+.wiki-welcome-chips-label {
+  flex: none;
+  width: 5.5rem;
+  font-size: var(--wiki-fs-sm);
+  font-weight: 700;
+  color: var(--wiki-text-muted);
+}
+
+.wiki-welcome-chips a {
+  padding: var(--wiki-space-2) var(--wiki-space-4);
+  border: 1px solid var(--wiki-border);
+  border-radius: var(--wiki-radius-full);
+  background: var(--wiki-card-bg);
+  color: var(--wiki-text);
+  font-size: var(--wiki-fs-sm);
+  font-weight: 600;
+  text-decoration: none;
+  transition: all var(--wiki-dur-fast) var(--wiki-ease);
+}
+
+.wiki-welcome-chips a:hover,
+.wiki-welcome-chips a:focus-visible {
+  border-color: var(--wiki-primary);
+  background: var(--wiki-primary);
+  color: var(--wiki-btn-text);
+}
+
+@media (max-width: 560px) {
+  .wiki-welcome-chips-label { width: 100%; }
+}
+
+.wiki-welcome-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--wiki-space-2);
+  margin-top: var(--wiki-space-8);
+}
+
+.wiki-welcome-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wiki-space-2);
+  padding: var(--wiki-space-2) var(--wiki-space-4);
+  border: 1px solid var(--wiki-border);
+  border-radius: var(--wiki-radius-full);
+  background: var(--wiki-card-bg);
+  color: var(--wiki-text);
+  font-size: var(--wiki-fs-sm);
+  font-weight: 600;
+  text-decoration: none;
+  transition: all var(--wiki-dur-fast) var(--wiki-ease);
+}
+
+.wiki-welcome-links a:hover,
+.wiki-welcome-links a:focus-visible {
+  border-color: var(--wiki-primary);
+  color: var(--wiki-primary);
+  transform: translateY(-2px);
 }
 
 .recent-page-card {
