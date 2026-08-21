@@ -2163,9 +2163,9 @@ html[data-theme="dark"] .human-authored-badge .hab-dark { display: block; }
   margin-bottom: var(--wiki-space-3);
 }
 
-/* 홈 히어로 워드마크 — 이름 텍스트 대신 브랜드 그림을 세운다. 원본 비율 1774:887 을
+/* 홈 히어로 시그니처(심볼+워드마크) — 이름 텍스트 대신 브랜드 그림을 세운다. 원본 비율 1774:887 을
    유지하고 좁은 화면에서 줄어들도록 max-width 로만 제한한다(고정 폭 금지). */
-.wiki-welcome-wordmark {
+.wiki-welcome-signature {
   display: block;
   width: min(360px, 72vw);
   height: auto;

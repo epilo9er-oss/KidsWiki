@@ -63,13 +63,13 @@ import ArticleFloatingTools from '../components/ArticleFloatingTools.astro';
       <!-- 홈(환영 페이지) -->
       <div id="homePage" class="d-none">
         <div class="wiki-welcome">
-          <!-- 워드마크를 h1 안에 그림으로 넣되, 접근성 이름은 .app-wiki-name 텍스트가 그대로
+          <!-- 시그니처(심볼+워드마크)를 h1 안에 그림으로 넣되, 접근성 이름은 .app-wiki-name 텍스트가 그대로
                맡는다(런타임 SSR 이 이 텍스트를 WIKI_NAME 으로 치환하므로 span 을 없애면 안 된다).
                이미지는 장식이라 alt="" 로 두고, 텍스트는 visually-hidden 으로 숨긴다.
-               주의: 워드마크 그림은 "키즈위키" 글자를 포함하므로 WIKI_NAME 을 다른 이름으로
+               주의: 시그니처 그림은 "키즈위키" 글자를 포함하므로 WIKI_NAME 을 다른 이름으로
                바꾸는 배포에서는 그림도 함께 교체해야 한다. -->
           <h1 class="wiki-welcome-title">
-            <img src="/brand/kiwi-wordmark.png" alt="" class="wiki-welcome-wordmark" width="720" height="360">
+            <img src="/brand/kiwi-signature.png" alt="" class="wiki-welcome-signature" width="720" height="360">
             <span class="app-wiki-name visually-hidden">KidsWiki</span>
           </h1>
           <p class="wiki-welcome-lead">알고 싶은 것을 찾아보고, 아는 것을 적어 보세요.</p>

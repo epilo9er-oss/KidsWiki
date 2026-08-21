@@ -98,7 +98,7 @@ MAX_UPLOAD_SIZE = "15728640" # 15MB, 변경 가능
 WIKI_NAME = "키즈위키" # 변경 가능, 사이트 전역에 적용되는 위키 이름
 
 # Public 폴더에서 해당 이미지들을 교체하세요.
-WIKI_LOGO_URL = "/brand/kiwi-mark-128.png"
+WIKI_LOGO_URL = "/brand/kiwi-symbol-128.png"
 WIKI_FAVICON_URL = "/favicon.svg"
 
 SUPER_ADMIN_EMAILS = "test@example.com, test2@example.com" # 콤마로 구분하여 여러 명 지정 가능
