@@ -1,4 +1,4 @@
-// 키위 과육 — 밝은 연두 헤더 + 씨앗 검정 글자. (WIKI_THEME 키 "kiwi-flesh").
+// 키위 과육 — 옅은 연두 헤더 + 씨앗 검정 글자. (WIKI_THEME 키 "kiwi-flesh").
 //
 // 브랜드는 KidsWiki 를 줄인 KiWi(키위)다. 색은 "적당한 초록" 이 아니라 과일 자체에서 온다 —
 // 껍질의 갈색, 과육의 밝은 연두, 씨앗의 검정, 속살의 크림.
@@ -22,15 +22,15 @@
 /** @type {import('./index.mjs').ThemeDefinition} */
 export default {
     root: {
-        // ── 팔레트(라이트=속살 크림 계열 지면, 다크=씨앗 계열 지면) ──
-        '--wiki-bg': 'light-dark(#f7f7ec, #16180f)',
-        '--wiki-bg-alt': 'light-dark(#eeeedd, #0f110a)',
-        '--wiki-card-bg': 'light-dark(#ffffff, #1f2217)',
+        // ── 중성 표면(테마색은 강조와 헤더에 한정) ──
+        '--wiki-bg': 'light-dark(#f8f8f8, #121212)',
+        '--wiki-bg-alt': 'light-dark(#f0f0f0, #0d0d0d)',
+        '--wiki-card-bg': 'light-dark(#ffffff, #1c1c1c)',
         '--wiki-text': 'light-dark(#23261c, #eef0e4)',
         '--wiki-text-muted': 'light-dark(#5f6551, #a8ad98)',
-        '--wiki-border': 'light-dark(#dedec9, #2f3324)',
+        '--wiki-border': 'light-dark(#dedede, #303030)',
         '--wiki-border-focus': 'light-dark(#47691c, #a8cf62)',
-        '--wiki-hr-color': 'light-dark(#d5d5bf, #2a2e20)',
+        '--wiki-hr-color': 'light-dark(#d6d6d6, #292929)',
 
         // 듀얼-롤 primary — 라이트는 진한 초록(텍스트 가능), 다크는 밝은 과육(어두운 면 위 텍스트).
         '--wiki-primary': 'light-dark(#47691c, #a8cf62)',
@@ -43,14 +43,14 @@ export default {
         '--wiki-focus-ring-color': 'rgba(71, 105, 28, 0.22)',
 
         // ── 표면 ──
-        '--wiki-code-bg': 'light-dark(#f2f2e2, #0f110a)',
+        '--wiki-code-bg': 'light-dark(#f3f3f3, #0d0d0d)',
         '--wiki-toc-bg': 'light-dark(rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.05))',
-        '--wiki-glass-bg': 'light-dark(rgba(255, 255, 255, 0.9), #1f2217e6)',
+        '--wiki-glass-bg': 'light-dark(rgba(255, 255, 255, 0.9), #1c1c1ce6)',
         '--wiki-glass-border': 'light-dark(rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.06))',
 
         // ── 헤더 ──
-        '--wiki-header-bg': 'light-dark(#8fbc45, #3d5c25)',
-        '--wiki-header-border': 'light-dark(#7aa838, #4d7030)',
+        '--wiki-header-bg': 'light-dark(#dfe8ce, #252b21)',
+        '--wiki-header-border': 'light-dark(#bdcaab, #3b4633)',
         '--wiki-header-text': 'light-dark(#23261c, #f2f7e6)',
         '--wiki-header-brand': 'light-dark(#23261c, #f2f7e6)',
     },

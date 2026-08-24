@@ -1,4 +1,4 @@
-// 세이지 — 저채도 초록 단색. 가장 조용함. (WIKI_THEME 키 "sage").
+// 세이지 — 옅은 회녹색 단색. 가장 조용함. (WIKI_THEME 키 "sage").
 //
 // 브랜드는 KidsWiki 를 줄인 KiWi(키위)다. 색은 "적당한 초록" 이 아니라 과일 자체에서 온다 —
 // 껍질의 갈색, 과육의 밝은 연두, 씨앗의 검정, 속살의 크림.
@@ -22,15 +22,15 @@
 /** @type {import('./index.mjs').ThemeDefinition} */
 export default {
     root: {
-        // ── 팔레트(라이트=속살 크림 계열 지면, 다크=씨앗 계열 지면) ──
-        '--wiki-bg': 'light-dark(#f7f9f5, #111614)',
-        '--wiki-bg-alt': 'light-dark(#edf1e9, #0b0f0d)',
-        '--wiki-card-bg': 'light-dark(#ffffff, #1a201d)',
+        // ── 중성 표면(테마색은 강조와 헤더에 한정) ──
+        '--wiki-bg': 'light-dark(#f8f8f8, #121212)',
+        '--wiki-bg-alt': 'light-dark(#f0f0f0, #0d0d0d)',
+        '--wiki-card-bg': 'light-dark(#ffffff, #1c1c1c)',
         '--wiki-text': 'light-dark(#26302a, #e8eee9)',
         '--wiki-text-muted': 'light-dark(#5c6a60, #9da89f)',
-        '--wiki-border': 'light-dark(#dde3d8, #28302b)',
+        '--wiki-border': 'light-dark(#dedede, #303030)',
         '--wiki-border-focus': 'light-dark(#2f6b4a, #7fc79f)',
-        '--wiki-hr-color': 'light-dark(#d3dbcd, #232a26)',
+        '--wiki-hr-color': 'light-dark(#d6d6d6, #292929)',
 
         // 듀얼-롤 primary — 라이트는 진한 초록(텍스트 가능), 다크는 밝은 과육(어두운 면 위 텍스트).
         '--wiki-primary': 'light-dark(#2f6b4a, #7fc79f)',
@@ -43,16 +43,16 @@ export default {
         '--wiki-focus-ring-color': 'rgba(47, 107, 74, 0.22)',
 
         // ── 표면 ──
-        '--wiki-code-bg': 'light-dark(#f1f4ee, #0b0f0d)',
+        '--wiki-code-bg': 'light-dark(#f3f3f3, #0d0d0d)',
         '--wiki-toc-bg': 'light-dark(rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.05))',
-        '--wiki-glass-bg': 'light-dark(rgba(255, 255, 255, 0.9), #1a201de6)',
+        '--wiki-glass-bg': 'light-dark(rgba(255, 255, 255, 0.9), #1c1c1ce6)',
         '--wiki-glass-border': 'light-dark(rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.06))',
 
         // ── 헤더 ──
-        '--wiki-header-bg': 'light-dark(#4a6b57, #22302a)',
-        '--wiki-header-border': 'light-dark(#3d5a48, #2c3d35)',
-        '--wiki-header-text': 'light-dark(#ffffff, #eaf1ec)',
-        '--wiki-header-brand': 'light-dark(#ffffff, #7fc79f)',
+        '--wiki-header-bg': 'light-dark(#dbe3dd, #252b27)',
+        '--wiki-header-border': 'light-dark(#becac1, #3e4941)',
+        '--wiki-header-text': 'light-dark(#26302a, #eaf1ec)',
+        '--wiki-header-brand': 'light-dark(#2f6b4a, #9bc4aa)',
     },
     dark: {
         // 다크 트리플렛(= #7fc79f).
