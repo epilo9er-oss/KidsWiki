@@ -858,6 +858,29 @@ html[data-theme="dark"] .user-dropdown-toggle {
   margin-right: 0;
 }
 
+.profile-avatar-fallback {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--wiki-primary), var(--wiki-accent));
+  color: #fff;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.profile-avatar-fallback > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 #navLogin i {
   font-size: 1.3rem;
 }
@@ -4203,4 +4226,3 @@ body:not([data-layout-mode="default"]):not([data-layout-mode="wide"]) .toc-rail 
 .doc-banner--flush   { margin: 0; }
 .doc-banner__action  { white-space: nowrap; }
 .doc-banner--sky .doc-banner__action { background: #38BDF8; color: #06283d; }
-

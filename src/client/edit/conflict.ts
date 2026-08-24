@@ -36,6 +36,7 @@
  */
 
 import { escapeHtml } from '../utils/html';
+import { renderUserAvatar } from '../utils/avatar';
 import './types';
 import type {
     AppConfig,
@@ -1097,9 +1098,7 @@ async function checkConcurrentEditors(): Promise<void> {
 
         if (data.editors && data.editors.length > 0) {
             const editorNames = data.editors.map(e => {
-                const avatar = e.picture
-                    ? `<img src="${escapeHtml(e.picture)}" class="editor-avatar" alt="" loading="lazy">`
-                    : '';
+                const avatar = renderUserAvatar(e.picture, e.name, 24, 'editor-avatar');
                 return `${avatar}<strong>${escapeHtml(e.name)}</strong>`;
             }).join(', ');
 

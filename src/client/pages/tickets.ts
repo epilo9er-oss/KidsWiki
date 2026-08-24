@@ -12,6 +12,8 @@
 //    deleteTicket / deleteComment / startReply / submitComment / cancelReply)는
 //    파일 끝에서 window.* 로 노출한다.
 
+import { renderUserAvatar } from '../utils/avatar';
+
     // ── 전역 상태 ──
     let currentTicketId = null;
     let currentStatusFilter = '';
@@ -510,7 +512,7 @@
         <div class="discussion-comment ${isDeleted ? 'discussion-comment-deleted' : ''}" id="comment-${c.id}">
           <div class="discussion-comment-header">
             <span class="discussion-comment-author">
-              ${c.author_picture ? `<img src="${c.author_picture}" class="discussion-comment-avatar" alt="" loading="lazy">` : ''}
+              ${renderUserAvatar(c.author_picture, c.author_name, 24, 'discussion-comment-avatar')}
               ${window.escapeHtml(c.author_name || '알 수 없음')}${authorRoleIcon}
             </span>
             <span class="discussion-comment-date text-muted small">${date}</span>

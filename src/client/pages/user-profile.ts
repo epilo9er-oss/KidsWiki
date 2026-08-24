@@ -8,6 +8,8 @@
 //  - HTML on* 속성에서 호출되는, 이 블록에서 정의된 함수(adminBanUser /
 //    adminChangeRole / goToContributionsPage)는 파일 끝에서 window.* 로 노출한다.
 
+import { renderUserAvatar } from '../utils/avatar';
+
 let profileUser = null;
 let contributionsPage = 1;
 let contributionsTotal = 0;
@@ -40,7 +42,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.currentUser = await authRes.json();
             document.querySelectorAll('#navLogin').forEach(el => el.classList.add('d-none'));
             document.querySelectorAll('#navUser').forEach(el => el.classList.remove('d-none'));
-            document.querySelectorAll('#userAvatar').forEach(el => el.src = window.currentUser.picture || '');
+            document.querySelectorAll('#userAvatar').forEach(el => {
+                el.innerHTML = renderUserAvatar(window.currentUser.picture, window.currentUser.name, 32, 'user-avatar m-0');
+            });
             document.querySelectorAll('#userName').forEach(el => el.textContent = window.currentUser.name);
 
             if (window.currentUser.role === 'admin' || window.currentUser.role === 'super_admin') {
@@ -74,9 +78,7 @@ async function renderProfile() {
         })
         : '알 수 없음';
 
-    const avatarHtml = profileUser.picture
-        ? `<img src="${profileUser.picture}" class="profile-avatar" alt="프로필" loading="lazy">`
-        : `<div class="profile-avatar-placeholder">${window.escapeHtml(profileUser.name.charAt(0))}</div>`;
+    const avatarHtml = renderUserAvatar(profileUser.picture, profileUser.name, 80, 'profile-avatar-placeholder');
 
     // 쪽지 보내기 버튼 표시 여부
     let sendMsgBtn = '';

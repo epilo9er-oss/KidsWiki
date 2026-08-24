@@ -39,6 +39,7 @@ import {
 // 위키 문법 인라인 하이라이트 플러그인 단일 소스(개방 메모장 pages/memo.ts 와 공유).
 import { buildWikiHighlightPlugins } from './cm-highlight';
 import { computeWikiLint, isInInlineCode } from './wiki-lint';
+import { renderUserAvatar } from '../utils/avatar';
 
 declare global {
     interface Window {
@@ -590,7 +591,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (res.ok) {
             window.currentUser = await res.json();
             document.querySelectorAll('#navUserName, #userName').forEach(el => el.textContent = window.currentUser.name);
-            document.querySelectorAll('#userAvatar').forEach(el => el.src = window.currentUser.picture || '');
+            document.querySelectorAll('#userAvatar').forEach(el => {
+                el.innerHTML = renderUserAvatar(window.currentUser.picture, window.currentUser.name, 32, 'user-avatar m-0');
+            });
             document.querySelectorAll('#navLogin').forEach(el => el.classList.add('d-none'));
             document.querySelectorAll('#navUser').forEach(el => el.classList.remove('d-none'));
             if (window.currentUser.role === 'admin' || window.currentUser.role === 'super_admin') {

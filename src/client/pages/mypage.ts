@@ -15,6 +15,8 @@
 //     revokeAllSessions / revokeAllMcpClients / deleteAccount / refreshProfilePicture /
 //     deleteDirectMessage / revokeSession / viewSentMessage)는 파일 끝에서 window.* 로 노출한다.
 
+import { renderUserAvatar } from '../utils/avatar';
+
         document.addEventListener('DOMContentLoaded', async () => {
             await Promise.all([window.loadConfig(), window.checkAuth()]);
             if (!window.currentUser) {
@@ -133,9 +135,12 @@
                 })
                 : '알 수 없음';
 
-            const avatarInner = window.currentUser.picture
-                ? `<img src="${window.currentUser.picture}" class="profile-avatar" alt="프로필" loading="lazy">`
-                : `<div class="profile-avatar-placeholder">${window.escapeHtml(window.currentUser.name.charAt(0))}</div>`;
+            const avatarInner = renderUserAvatar(
+                window.currentUser.picture,
+                window.currentUser.name,
+                80,
+                'profile-avatar-placeholder',
+            );
 
             // 사진 비공개 상태에서는 공급자 사진 갱신 버튼을 숨긴다(갱신이 서버에서 거부됨).
             const refreshBtn = window.currentUser.picture_private
@@ -1683,9 +1688,7 @@
 
                 const date = new Date(msg.created_at * 1000).toLocaleString('ko-KR');
                 const receiverName = msg.receiver_name || '알 수 없음';
-                const receiverPic = msg.receiver_picture && window.isSafeUrl(msg.receiver_picture)
-                    ? `<img src="${window.escapeHtml(msg.receiver_picture)}" class="rounded-circle me-2" width="28" height="28" loading="lazy">`
-                    : '<i class="mdi mdi-account-circle fs-4 me-2 text-muted"></i>';
+                const receiverPic = renderUserAvatar(msg.receiver_picture, receiverName, 28, 'me-2');
 
                 Swal.fire({
                     title: '<i class="mdi mdi-email-send-outline text-primary"></i> 보낸 쪽지',

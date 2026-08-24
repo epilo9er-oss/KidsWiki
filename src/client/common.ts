@@ -27,6 +27,7 @@ import {
     skeletonCards,
 } from './utils/ui-state';
 import { initCommandPalette } from './command-palette';
+import { renderUserAvatar } from './utils/avatar';
 
 // ── 테마 초기화 (body 내 fallback, head의 인라인 스크립트가 먼저 실행됨) ──
 // data-theme: 위키 자체 다크모드 변수 (--wiki-card-bg 등)
@@ -914,7 +915,9 @@ async function checkAuth() {
             document.querySelectorAll('#navSettings').forEach(el => el.classList.add('d-none'));
             document.querySelectorAll('#navUser').forEach(el => el.classList.remove('d-none'));
 
-            document.querySelectorAll('#userAvatar').forEach(el => el.src = isSafeUrl(currentUser.picture) ? currentUser.picture : '');
+            document.querySelectorAll('#userAvatar').forEach(el => {
+                el.innerHTML = renderUserAvatar(currentUser.picture, currentUser.name, 32, 'user-avatar m-0');
+            });
             document.querySelectorAll('#userName').forEach(el => el.textContent = currentUser.name);
 
             if (currentUser.role === 'admin' || currentUser.role === 'super_admin') {
@@ -1370,9 +1373,7 @@ async function viewMessage(messageId) {
 
         const date = new Date(msg.created_at * 1000).toLocaleString('ko-KR');
         const senderName = msg.sender_name || '알 수 없음';
-        const senderPic = isSafeUrl(msg.sender_picture)
-            ? `<img src="${escapeHtml(msg.sender_picture)}" class="rounded-circle me-2" width="28" height="28" loading="lazy">`
-            : '<i class="mdi mdi-account-circle fs-4 me-2 text-muted"></i>';
+        const senderPic = renderUserAvatar(msg.sender_picture, senderName, 28, 'me-2');
 
         // DM 설정 확인 (답장 가능 여부)
         let canReply = false;

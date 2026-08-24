@@ -12,6 +12,8 @@
 //  - HTML on* 속성(정적 + innerHTML 생성 문자열)에서 호출되는 블록 정의 함수는 파일 끝에서
 //    window.* 로 노출한다.
 
+import { renderUserAvatar } from '../utils/avatar';
+
       // ── 탭 전환 로직 ──
       function showTab(tabId) {
         document
@@ -60,15 +62,7 @@
         const roleSlot = document.getElementById("adminRoleSlot");
         if (profileCard && window.currentUser) {
           profileCard.style.display = "";
-          if (window.currentUser.picture) {
-            const img = document.createElement("img");
-            img.src = window.currentUser.picture;
-            img.className = "rounded-circle";
-            img.width = 32;
-            img.height = 32;
-            avatarSlot.innerHTML = "";
-            avatarSlot.appendChild(img);
-          }
+          avatarSlot.innerHTML = renderUserAvatar(window.currentUser.picture, window.currentUser.name, 32);
           nameSlot.textContent = window.currentUser.name;
           let roleBadge = '<span class="badge bg-secondary">User</span>';
           if (window.currentUser.role === 'super_admin') {
@@ -175,9 +169,7 @@
         const tbody = document.getElementById("userTableBody");
         const html = (users || [])
           .map((u) => {
-            const profile = u.picture
-              ? `<img src="${u.picture}" class="rounded-circle" width="28" height="28">`
-              : `<i class="mdi mdi-account-circle fs-4 text-secondary"></i>`;
+            const profile = renderUserAvatar(u.picture, u.name, 28);
             const joinDate = new Date(u.created_at * 1000).toLocaleDateString(
               "ko-KR",
             );
@@ -686,7 +678,7 @@
         const html = (reqs || [])
           .map(
             (r) => `<tr>
-                <td>${r.picture ? `<img src="${r.picture}" width="24" height="24" class="rounded-circle">` : "-"}</td>
+                <td>${renderUserAvatar(r.picture, r.name, 24)}</td>
                 <td class="fw-bold small">${window.escapeHtml(r.name)}</td>
                 <td class="small">${window.escapeHtml(r.email)}</td>
                 <td><span class="badge bg-info">${r.status}</span></td>

@@ -24,6 +24,8 @@
  *   handle.destroy();     // 마운트 해제 (페이지 SPA 라우팅 시)
  */
 
+import { renderUserAvatar } from '../utils/avatar';
+
 declare global {
     interface Window {
         openExistingImageSearch?: (cb: (url: string, alt: string, size: string) => void) => Promise<void>;
@@ -136,13 +138,7 @@ function makeMentionMenu(
             item.type = 'button';
             item.className = 'mini-editor-mention-item';
 
-            if (u.picture) {
-                const img = document.createElement('img');
-                img.className = 'mini-editor-mention-avatar';
-                img.src = u.picture;
-                img.alt = '';
-                item.appendChild(img);
-            }
+            item.insertAdjacentHTML('beforeend', renderUserAvatar(u.picture, u.name, 22, 'mini-editor-mention-avatar'));
 
             const name = document.createElement('span');
             name.className = 'mini-editor-mention-name';

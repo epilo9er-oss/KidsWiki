@@ -10,8 +10,7 @@
  */
 
 import type { QrLoginInfoResponse } from '../../shared/api/qr-login';
-
-const DEFAULT_AVATAR = '/avatar-default.svg';
+import { renderUserAvatar } from '../utils/avatar';
 
 function $(id: string): HTMLElement | null {
     return document.getElementById(id);
@@ -72,14 +71,8 @@ async function postJson(path: string, body: unknown): Promise<{ ok: boolean; sta
 }
 
 function renderInfo(info: QrLoginInfoResponse): void {
-    const avatar = $('qrAccountAvatar') as HTMLImageElement | null;
-    if (avatar) {
-        avatar.src = info.account.picture || DEFAULT_AVATAR;
-        avatar.onerror = () => {
-            avatar.onerror = null;
-            avatar.src = DEFAULT_AVATAR;
-        };
-    }
+    const avatar = $('qrAccountAvatar');
+    if (avatar) avatar.innerHTML = renderUserAvatar(info.account.picture, info.account.name, 48, 'qr-account-avatar');
     const nameEl = $('qrAccountName');
     if (nameEl) nameEl.textContent = info.account.name;
 

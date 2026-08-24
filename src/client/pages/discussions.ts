@@ -12,6 +12,8 @@
 //    cancelReply / changeDiscussionStatus / deleteDiscussion / toggleDiscussionMute /
 //    startReply / deleteComment)는 파일 끝에서 window.* 로 노출한다.
 
+import { renderUserAvatar } from '../utils/avatar';
+
     // ── 전역 상태 ──
     let currentSlug = null;
     let currentDiscussionPageId = null;
@@ -445,7 +447,7 @@
         <div class="discussion-comment ${isDeleted ? 'discussion-comment-deleted' : ''} p-3 p-md-4 mb-4 shadow-sm w-100" style="border-radius: 12px; background: var(--wiki-card-bg); border: 1px solid var(--wiki-border);" id="comment-${c.id}">
           <div class="discussion-comment-header d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center mb-3 pb-2 border-bottom border-secondary border-opacity-25 w-100">
             <span class="discussion-comment-author d-flex align-items-center gap-2 fw-bold w-100 w-sm-auto mb-2 mb-sm-0" style="font-size: 1.05rem;">
-              ${c.author_id ? `<a href="/profile/${c.author_id}" class="discussion-author-link text-decoration-none d-flex align-items-center gap-2">${c.author_picture ? `<img src="${c.author_picture}" class="discussion-comment-avatar rounded-circle border object-fit-cover" style="width: 32px; height: 32px;" alt="" loading="lazy">` : '<i class="bi bi-person-circle fs-3 text-secondary"></i>'}${window.escapeHtml(c.author_name || '알 수 없음')}${window.renderUserRoleIcon(c.author_role)}</a>` : `<span class="d-flex align-items-center gap-2">${c.author_picture ? `<img src="${c.author_picture}" class="discussion-comment-avatar rounded-circle border object-fit-cover" style="width: 32px; height: 32px;" alt="" loading="lazy">` : '<i class="bi bi-person-circle fs-3 text-secondary"></i>'}${window.escapeHtml(c.author_name || '알 수 없음')}${window.renderUserRoleIcon(c.author_role)}</span>`}
+              ${c.author_id ? `<a href="/profile/${c.author_id}" class="discussion-author-link text-decoration-none d-flex align-items-center gap-2">${renderUserAvatar(c.author_picture, c.author_name, 32, 'discussion-comment-avatar')}${window.escapeHtml(c.author_name || '알 수 없음')}${window.renderUserRoleIcon(c.author_role)}</a>` : `<span class="d-flex align-items-center gap-2">${renderUserAvatar(c.author_picture, c.author_name, 32, 'discussion-comment-avatar')}${window.escapeHtml(c.author_name || '알 수 없음')}${window.renderUserRoleIcon(c.author_role)}</span>`}
             </span>
             <span class="discussion-comment-date text-muted mt-1 mt-sm-0 ms-sm-auto" style="font-size: 0.85rem;"><i class="bi bi-clock-history"></i> ${date}</span>
           </div>

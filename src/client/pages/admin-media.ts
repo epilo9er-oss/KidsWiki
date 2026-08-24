@@ -10,6 +10,8 @@
 //    (runGarbageCollector / gcSelectAll / gcDeselectAll / gcDeleteSelected /
 //     changeMediaSort / searchMedia / goToMediaPage / trackBacklinks / deleteMedia)
 
+import { renderUserAvatar } from '../utils/avatar';
+
 document.addEventListener("DOMContentLoaded", async () => {
   await window.loadConfig();
   try {
@@ -39,7 +41,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     document
       .querySelectorAll("#userAvatar")
-      .forEach((el) => (el.src = window.currentUser.picture || ""));
+      .forEach((el) => {
+        el.innerHTML = renderUserAvatar(window.currentUser.picture, window.currentUser.name, 32, "user-avatar m-0");
+      });
     document
       .querySelectorAll("#userName")
       .forEach((el) => (el.textContent = window.currentUser.name));

@@ -22,6 +22,8 @@
 //             cursor, total, processed, startedAt, updatedAt, finishedAt,
 //             error, result }
 
+import { renderUserAvatar } from '../utils/avatar';
+
 interface BulkDoc {
   id: number;
   slug: string;
@@ -68,7 +70,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     document
       .querySelectorAll("#userAvatar")
-      .forEach((el) => (el.src = window.currentUser.picture || ""));
+      .forEach((el) => {
+        el.innerHTML = renderUserAvatar(window.currentUser.picture, window.currentUser.name, 32, "user-avatar m-0");
+      });
     document
       .querySelectorAll("#userName")
       .forEach((el) => (el.textContent = window.currentUser.name));
