@@ -19,7 +19,7 @@
  * 무엇을 제거·덮어쓰는지와 그 이유는 아래 DROP_TABLES / DROP_KEYS / VAR_OVERRIDES 주석이 단일 소스다.
  * (`name` 만 예외로 여기 적는다 — `<원본 이름>-preview`, 환경변수 PREVIEW_WORKER_NAME 으로 재정의 가능.)
  *
- * 산출물은 .gitignore 대상이며, 배포 직전 항상 재생성한다(bun run preview:deploy).
+ * 산출물은 .gitignore 대상이며, 배포 직전 항상 재생성한다(npm run preview:deploy).
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -324,7 +324,7 @@ const BANNER = [
 ].join('\n');
 
 /**
- * wrangler.toml 본문을 프리뷰용 TOML 문자열로 변환한다(순수 함수 — `bun run test:preview-config` 대상).
+ * wrangler.toml 본문을 프리뷰용 TOML 문자열로 변환한다(순수 함수 — `npm run test:preview-config` 대상).
  * @param {string} source wrangler.toml 원문
  * @param {string} [nameOverride] 프리뷰 Worker 이름. 미지정 시 `<원본 이름>-preview`
  * @returns {{ text: string, previewName: string, dropped: string[] }}

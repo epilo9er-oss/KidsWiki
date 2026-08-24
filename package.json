@@ -2,7 +2,12 @@
   "name": "kidswiki",
   "version": "1.0.0",
   "private": true,
-  "packageManager": "bun@1.4.0",
+  "packageManager": "npm@11.17.0",
+  "allowScripts": {
+    "esbuild": true,
+    "sharp": true,
+    "workerd": true
+  },
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -10,6 +15,8 @@
   "scripts": {
     "predev": "node packages/wiki-shared/scripts/sync-render-css.mjs",
     "dev": "wrangler dev",
+    "setup:local": "wrangler d1 execute DB --local --file=migrations/schema.sql",
+    "dev:local": "wrangler dev --local",
     "deploy": "wrangler deploy",
     "build": "node packages/wiki-shared/scripts/sync-render-css.mjs && node scripts/build-skins-css.mjs && astro build && node scripts/copy-astro-pages.mjs && vite build",
     "build:astro": "node packages/wiki-shared/scripts/sync-render-css.mjs && node scripts/build-skins-css.mjs && astro build && node scripts/copy-astro-pages.mjs",
@@ -18,8 +25,8 @@
     "typecheck:client": "tsc --noEmit -p tsconfig.client.json",
     "generate:rules": "node scripts/generate-rules.mjs",
     "preview:config": "node scripts/make-preview-config.mjs",
-    "preview:init": "bun run test:preview-config && bun run preview:config && wrangler deploy -c wrangler.preview.toml",
-    "preview:deploy": "bun run test:preview-config && bun run preview:config && wrangler versions upload -c wrangler.preview.toml",
+    "preview:init": "npm run test:preview-config && npm run preview:config && wrangler deploy -c wrangler.preview.toml",
+    "preview:deploy": "npm run test:preview-config && npm run preview:config && wrangler versions upload -c wrangler.preview.toml",
     "test:preview-config": "node --test scripts/make-preview-config.test.mjs"
   },
   "dependencies": {

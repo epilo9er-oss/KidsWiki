@@ -1,12 +1,13 @@
 name = "kidswiki" # 변경가능
 main = "src/index.ts"
 compatibility_date = "2026-03-01"
+compatibility_flags = ["nodejs_compat"]
 
 # Vite 클라이언트 빌드를 deploy 전에 자동 실행한다
 # - 입력: src/client/*.ts
 # - 출력: public/dist/*.js (Cloudflare Workers Assets로 서빙됨)
 [build]
-command = "bun run build"
+command = "npm run build"
 
 [assets]
 directory = "public"
