@@ -8,9 +8,10 @@
 - [x] 로컬 D1 스키마 적용
 - [x] `wrangler dev --local` 확인
 - [x] Cloudflare Workers 온보딩 및 `workers.dev` 서브도메인 등록
-- [ ] R2 구독 활성화 (결제수단 등록이 필요해 보류)
+- [x] R2 구독 활성화
 - [x] 운영용 D1, KV 생성
-- [ ] 운영용 R2 생성
+- [x] 운영용 R2(`kidswiki-media`, `kidswiki-rag`) 생성
+- [x] AI Search `kidswiki-rag-search` 생성
 - [ ] 운영 변수와 Secret 설정
 - [x] 원격 D1 스키마 적용
 - [ ] Worker 배포 및 스모크 테스트
@@ -33,11 +34,11 @@ Cloudflare 계정마다 한 번 정하는 Worker용 기본 주소다. 별도 도
 
 이 등록은 앞서 사용한 원격 개발 프록시와 기본 배포 주소에 필요하다. 운영 주소는 나중에 별도 Custom Domain으로 연결할 수 있다.
 
-## 2. R2 오류 `10042`
+## 2. R2 활성화와 오류 `10042`
 
 이 오류는 패키지 매니저나 명령 문법 문제가 아니다. 현재 Cloudflare 계정에 R2 구독이 활성화되지 않아 버킷 생성 요청이 거절된 것이다.
 
-현재는 결제 카드 등록을 진행하지 않기로 해 이 단계에서 배포 작업을 보류했다. 실패한 명령에서는 `kidswiki-media` 버킷이 생성되지 않았으며, 재개할 때 아래 절차부터 이어간다.
+이 계정은 2026-08-24에 R2를 활성화하고 `kidswiki-media`, `kidswiki-rag` 버킷 생성을 완료했다. 다른 계정에서 같은 오류가 나면 아래 절차로 활성화한다.
 
 1. Dashboard에서 **Storage &amp; databases &gt; R2 &gt; Overview**로 이동한다.
 2. R2 체크아웃 절차를 완료해 계정에 R2 구독을 추가한다.
@@ -80,7 +81,22 @@ npx wrangler kv namespace create kidswiki-kv \
   --binding KV --update-config
 ```
 
-`--update-config`가 성공하면 `wrangler.toml`의 주석 처리된 값이 아래 형태로 채워져야 한다. 같은 binding 블록이 중복으로 생기지 않았는지만 확인한다.
+RAG 검색을 쓰면 인덱싱 전용 버킷과 그 버킷을 데이터 소스로 사용하는 AI Search 인스턴스도 생성한다. AI Search 인스턴스는 계정에 자동 생성되는 `default` namespace를 사용한다.
+
+```sh
+npx wrangler r2 bucket create kidswiki-rag --location apac
+npx wrangler ai-search create kidswiki-rag-search \
+  --type r2 --source kidswiki-rag
+```
+
+이미 생성된 경우 다시 만들지 말고 조회한다.
+
+```sh
+npx wrangler r2 bucket list
+npx wrangler ai-search list
+```
+
+리소스 생성 후 `wrangler.toml`은 아래 형태여야 한다. `--update-config`가 추가한 블록과 기존 블록이 중복되지 않았는지 확인한다.
 
 ```toml
 [[d1_databases]]
@@ -91,6 +107,15 @@ database_id = "<Cloudflare가 발급한 ID>"
 [[r2_buckets]]
 binding = "MEDIA"
 bucket_name = "kidswiki-media"
+
+[[r2_buckets]]
+binding = "RAG_BUCKET"
+bucket_name = "kidswiki-rag"
+
+[[ai_search]]
+binding = "AI_SEARCH"
+instance_name = "kidswiki-rag-search"
+remote = true
 
 [[kv_namespaces]]
 binding = "KV"
@@ -104,9 +129,13 @@ id = "<Cloudflare가 발급한 ID>"
 # binding = "RAG_BUCKET"
 # bucket_name = "..."
 
-# [ai]
-# binding = "AI"
+# [[ai_search]]
+# binding = "AI_SEARCH"
+# instance_name = "..."
+# remote = true
 ```
+
+RAG를 쓰는 운영 설정에서는 위 두 블록을 활성화하고 `[vars]`에 `RAG_SEARCH_ENABLED = "true"`를 둔다. 직접 인스턴스 바인딩이 이름을 가지므로 `RAG_AUTORAG_NAME`은 사용하지 않는다. `binding` 값은 코드와 맞게 각각 `RAG_BUCKET`, `AI_SEARCH`로 유지한다. `remote = true`는 로컬 dev에서도 실제 AI Search 인스턴스를 사용한다는 표시이며 원격 사용량이 발생한다.
 
 `ANALYTICS`와 `ADMIN_JOB_DO`는 현재 설정대로 배포하며 별도 ID를 채우지 않는다.
 
@@ -145,11 +174,18 @@ npx wrangler d1 execute DB --remote --file=migrations/schema.sql
 npm run deploy
 ```
 
+RAG를 처음 켠 배포라면 최고 관리자로 `/admin-bulk-manage`에 접속해 **RAG 백필**을 한 번 실행한다. 이 작업은 기존 문서의 현행 본문을 `RAG_BUCKET`에 복사하며, 이후 문서 편집은 자동으로 미러링된다. AI Search의 다음 R2 동기화가 끝났는지 확인한다.
+
+```sh
+npx wrangler ai-search stats kidswiki-rag-search
+```
+
 `wrangler secret put`은 새 Worker 버전을 만들어 바로 배포하므로 Secret 등록 뒤 별도 재배포는 필요 없다. 다음을 확인한다.
 
 - `/` 응답
 - OAuth callback 주소 일치 여부
 - 이미지 업로드 및 `/media` 조회
+- `/search`의 RAG 본문 검색과 MCP `search_rag`
 - 관리자 계정 인식
 - `MCP_MODE`, 크롤링, 공개 범위 설정
 
@@ -213,3 +249,5 @@ npm run deploy
 - [Cloudflare Workers: workers.dev](https://developers.cloudflare.com/workers/configuration/routing/workers-dev/)
 - [Cloudflare Workers: Custom Domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/)
 - [Cloudflare R2: Get started](https://developers.cloudflare.com/r2/get-started/)
+- [Cloudflare AI Search: Wrangler](https://developers.cloudflare.com/ai-search/get-started/wrangler/)
+- [Cloudflare AI Search: Workers binding](https://developers.cloudflare.com/ai-search/api/search/workers-binding/)

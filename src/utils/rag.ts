@@ -4,53 +4,17 @@
 //   1) 미러링: 문서의 "현행 본문"을 인덱싱 전용 R2 버킷(RAG_BUCKET)에 best-effort 로 반영한다.
 //      Cloudflare 대시보드에서 이 버킷을 AI Search 데이터 소스로 등록해 두면 인덱싱이
 //      자동 관리된다(코드는 미러링까지만 담당).
-//   2) 질의: env.AI.autorag(<instance>).search(...) 로 본문을 의미 기반 검색한다.
-//
-// AI Search 바인딩 API 는 과도기(레거시 env.AI.autorag() ↔ 신규 [[ai_search]] 인스턴스
-// 바인딩)다. 여기 한 모듈에서만 호출부를 두어, 추후 신규 API 로 교체하더라도 ragSearchBody
-// 한 함수 안에서 끝나게 한다. 응답도 두 형태(data[].filename / chunks[].item.key)를 모두 받는다.
+//   2) 질의: [[ai_search]] 로 직접 연결한 env.AI_SEARCH.search(...) 로 본문을 의미 기반 검색한다.
 //
 // 플러그인 토글은 배포 시점 env 변수(RAG_SEARCH_ENABLED)다. 미러/검색 각각은 필요한 바인딩이
 // 갖춰져야만 실제로 동작하며, 미구성 시 모든 함수가 안전하게 no-op/빈 결과를 반환한다.
-
-// ── AI Search(AutoRAG) 바인딩의 최소 구조 타입 ──
-// workers-types 버전에 autorag() 정의가 없을 수도 있으므로 직접 구조 타입을 둔다.
-export interface RagAutoragSearchResponse {
-    // 레거시 AutoRAG search() 응답.
-    data?: Array<{
-        filename?: string;
-        file_id?: string;
-        score?: number;
-        content?: Array<{ text?: string }>;
-    }>;
-    // 신규 AI Search search() 응답.
-    chunks?: Array<{
-        score?: number;
-        text?: string;
-        item?: { key?: string };
-    }>;
-}
-
-export interface RagAutoragInstance {
-    search(opts: {
-        query: string;
-        max_num_results?: number;
-        rewrite_query?: boolean;
-        ranking_options?: { score_threshold?: number };
-    }): Promise<RagAutoragSearchResponse>;
-}
-
-export interface RagAiBinding {
-    autorag(name: string): RagAutoragInstance;
-}
 
 // c.env(Env['Bindings']) 와 구조적으로 호환되는 최소 환경 타입.
 // types.ts ↔ rag.ts 순환 의존을 피하기 위해 Env 전체를 import 하지 않는다.
 export interface RagEnv {
     RAG_BUCKET?: R2Bucket;
-    AI?: RagAiBinding;
+    AI_SEARCH?: AiSearchInstance;
     RAG_SEARCH_ENABLED?: string;
-    RAG_AUTORAG_NAME?: string;
 }
 
 // executionCtx 의 waitUntil 만 쓰는 최소 타입(없으면 fire-and-forget).
@@ -77,9 +41,9 @@ export function isRagMirrorEnabled(env: RagEnv): boolean {
     return masterEnabled(env) && !!env.RAG_BUCKET;
 }
 
-/** RAG 본문 검색 가능 여부 — 마스터 스위치 ON + AI 바인딩 + 인스턴스 이름 구성. */
+/** RAG 본문 검색 가능 여부 — 마스터 스위치 ON + AI Search 인스턴스 바인딩. */
 export function isRagSearchEnabled(env: RagEnv): boolean {
-    return masterEnabled(env) && !!env.AI && !!env.RAG_AUTORAG_NAME;
+    return masterEnabled(env) && !!env.AI_SEARCH;
 }
 
 /**
@@ -167,14 +131,6 @@ export function renamePageMirror(env: RagEnv, ctx: WaitCtx, oldSlug: string, new
     schedule(ctx, task);
 }
 
-function firstChunkText(content: Array<{ text?: string }> | undefined): string {
-    if (!Array.isArray(content)) return '';
-    for (const c of content) {
-        if (c && typeof c.text === 'string' && c.text.length > 0) return c.text;
-    }
-    return '';
-}
-
 /**
  * RAG 본문 검색. AI Search 를 질의해 slug 별 최고 score 결과를 score 내림차순으로 반환한다.
  * ACL 무관 전 문서가 인덱싱돼 있으므로, 비공개/삭제 필터링은 호출부(D1 사후 조회)가 담당한다.
@@ -190,11 +146,14 @@ export async function ragSearchBody(
     const trimmed = (query || '').trim();
     if (!isRagSearchEnabled(env) || !trimmed) return [];
 
-    const instance = env.AI!.autorag(env.RAG_AUTORAG_NAME!);
-    const res = await instance.search({
+    const res = await env.AI_SEARCH!.search({
         query: trimmed,
-        max_num_results: Math.min(RAG_MAX_RESULTS_CAP, Math.max(1, maxNumResults)),
-        rewrite_query: false,
+        ai_search_options: {
+            retrieval: {
+                max_num_results: Math.min(RAG_MAX_RESULTS_CAP, Math.max(1, maxNumResults)),
+            },
+            query_rewrite: { enabled: false },
+        },
     });
 
     // slug 별 최고 score 1건만 유지(한 문서가 여러 청크로 매치될 수 있음).
@@ -211,12 +170,7 @@ export async function ragSearchBody(
         }
     };
 
-    if (Array.isArray(res?.data)) {
-        for (const d of res.data) consider(d.filename ?? d.file_id, d.score, firstChunkText(d.content));
-    }
-    if (Array.isArray(res?.chunks)) {
-        for (const ch of res.chunks) consider(ch.item?.key, ch.score, ch.text ?? '');
-    }
+    for (const ch of res.chunks) consider(ch.item.key, ch.score, ch.text);
 
     return [...best.values()].sort((a, b) => b.score - a.score);
 }

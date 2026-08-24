@@ -12,7 +12,7 @@
  *   `src/routes/adminJobs.ts` 가 `env.ADMIN_JOB_DO` 부재를 이미 503 으로 처리하므로 코드 변경은 필요 없다.
  *
  * 왜 `[env.preview]` 가 아니라 파일 생성인가:
- *   wrangler 환경은 바인딩·vars 가 **비상속(non-inheritable)** 이라 D1/R2/KV/AI/[vars] 전부를
+ *   wrangler 환경은 바인딩·vars 가 **비상속(non-inheritable)** 이라 D1/R2/KV/AI Search/[vars] 전부를
  *   환경 블록에 재선언해야 한다. 그러면 wrangler.toml 이 통째로 이중화돼 드리프트가 생긴다.
  *   여기서는 원본을 그대로 복사하고 위험한 블록만 걷어내므로 단일 소스가 유지된다.
  *

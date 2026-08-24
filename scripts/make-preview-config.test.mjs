@@ -54,7 +54,7 @@ test('실제 wrangler.toml: 위험 블록만 사라지고 나머지는 그대로
     assert.deepEqual(out.d1_databases, src.d1_databases);
     assert.deepEqual(out.r2_buckets, src.r2_buckets);
     assert.deepEqual(out.kv_namespaces, src.kv_namespaces);
-    assert.deepEqual(out.ai, src.ai);
+    assert.deepEqual(out.ai_search, src.ai_search);
     assert.deepEqual(out.observability, src.observability);
     assert.equal(out.main, src.main);
     assert.equal(out.compatibility_date, src.compatibility_date);

@@ -1,7 +1,7 @@
 # KidsWiki 테스트: Wrangler 배포가 필요한가
 
 - 조사일: 2026-08-24
-- Context7는 월간 quota 초과로 사용할 수 없어 Cloudflare 공식 문서를 직접 확인했다.
+- 갱신일: 2026-08-24 (AI Search 직접 인스턴스 바인딩 반영)
 
 ## 결론
 
@@ -17,7 +17,7 @@
 
 ## 이 프로젝트의 최소 로컬 실행
 
-현재 `wrangler.toml`은 [`wrangler example.toml`](../../wrangler%20example.toml)을 복사한 상태라 D1·R2·KV의 원격 식별자가 빈 문자열로 남아 있다. 로컬 전용 설정에서는 이 빈 식별자 필드를 제거하고 바인딩 이름만 남긴 뒤, 로컬 D1에 스키마를 넣고 실행한다.
+새 로컬 환경에서 [`wrangler example.toml`](../../wrangler%20example.toml)을 복사했다면 D1·R2·KV의 빈 식별자 필드를 제거하고 바인딩 이름만 남긴 뒤, 로컬 D1에 스키마를 넣고 실행한다.
 
 ```sh
 npm ci
@@ -25,7 +25,7 @@ npm run setup:local
 npm run dev:local
 ```
 
-현재 설정에는 로컬 시뮬레이션이 없는 `[ai]` 바인딩이 남아 있어 평범한 `npm run dev`도 원격 연결을 시도한다. 이때 Workers 온보딩이 끝나지 않은 계정은 `workers.dev` 서브도메인을 먼저 등록하라는 오류가 난다. 일반 로컬 테스트는 위처럼 `--local`을 강제하거나, `[ai]` 블록을 주석 처리하고 `RAG_SEARCH_ENABLED = "false"`를 유지한다.
+AI Search는 로컬 시뮬레이션 대신 원격 프록시를 사용한다. 일반 로컬 테스트에서는 `[[ai_search]]` 블록을 주석 처리하고 `RAG_SEARCH_ENABLED = "false"`를 유지한다. 로컬 Worker에서 실제 AI Search를 시험할 때만 바인딩에 `remote = true`를 추가한다.
 
 `--local` D1은 프로덕션과 분리되고, D1은 Cloudflare가 운영하는 것과 같은 버전으로 로컬 개발을 지원한다. 새 로컬 리소스는 비어 있으므로 위 스키마 명령을 최초 한 번 실행해야 하며, 이후 로컬 데이터는 기본적으로 `wrangler dev` 실행 사이에도 유지된다. `.wrangler/state`를 지웠다면 다시 실행한다. ([Cloudflare: Adding local data](https://developers.cloudflare.com/workers/local-development/local-data/), [Cloudflare: D1 local development](https://developers.cloudflare.com/d1/best-practices/local-development/))
 
@@ -43,7 +43,7 @@ npm run dev:local
 | Durable Object `ADMIN_JOB_DO` | 원격 리소스/ID는 불필요. 예제의 class binding과 migration만 유지하면 인스턴스·상태는 앱 코드가 로컬에 만든다. ([Cloudflare: Adding local data](https://developers.cloudflare.com/workers/local-development/local-data/#durable-objects)) |
 | Assets `ASSETS` | 원격 리소스/ID는 불필요. 예제의 `directory = "public"`만 사용한다. |
 | Analytics Engine `ANALYTICS` | 바인딩 자체는 로컬 지원되고 리소스 ID가 없다. 다만 이 프로젝트의 통계 조회 라우트는 Cloudflare SQL API를 직접 호출하므로 실제 통계를 보려면 `CF_ACCOUNT_ID`와 `CF_API_TOKEN`이 필요하다. ([Cloudflare: binding support](https://developers.cloudflare.com/workers/local-development/bindings-per-env/), [`src/routes/analytics.ts`](../../src/routes/analytics.ts#L14)) |
-| Workers AI `AI` | 로컬 시뮬레이션은 없고 리소스 ID도 없다. `[ai] binding = "AI"`를 두면 로컬 Worker에서 실제 Cloudflare 계정의 AI를 호출해 로그인과 사용량이 발생한다. 완전 로컬 일반 테스트라면 `[ai]`를 빼고 `RAG_SEARCH_ENABLED = "false"`를 유지한다. ([Cloudflare: Workers AI with Wrangler](https://developers.cloudflare.com/workers-ai/get-started/workers-wrangler/), [Cloudflare: binding support](https://developers.cloudflare.com/workers/local-development/bindings-per-env/)) |
+| AI Search `AI_SEARCH` | 로컬 시뮬레이션은 없다. 실제 인스턴스를 시험할 때만 `[[ai_search]]` 바인딩에 `remote = true`를 두며 Cloudflare 로그인·원격 사용량이 필요하다. 완전 로컬 테스트라면 블록을 빼고 `RAG_SEARCH_ENABLED = "false"`를 유지한다. ([Cloudflare: AI Search local development](https://developers.cloudflare.com/ai-search/api/search/workers-binding/)) |
 
 `.dev.vars`는 앱을 띄우기 위한 공통 필수 파일이 아니라, 로컬에서 비밀값이 필요한 기능을 시험할 때만 만든다. Cloudflare는 로컬 secret을 설정 파일과 같은 디렉터리의 `.dev.vars` 또는 `.env` 중 하나에 두도록 안내한다. ([Cloudflare: Local secrets](https://developers.cloudflare.com/workers/local-development/environment-variables/#local-development-with-secrets))
 
@@ -53,16 +53,16 @@ npm run dev:local
 - Discord 알림: `DISCORD_ADMIN_WEBHOOK_URL`, `DISCORD_COMMUNITY_WEBHOOK_URL`
 - Web Push: `VAPID_PRIVATE_KEY` (공개키와 subject는 일반 설정)
 
-Workers AI 인증은 이 앱의 `.dev.vars` secret이 아니라 Wrangler의 Cloudflare 로그인/계정을 사용한다. 위 선택 기능을 시험하지 않는 기본 UI·로컬 CRUD 테스트라면 `.dev.vars` 없이 시작할 수 있다. 프로젝트가 기대하는 secret 목록은 [`wrangler example.toml`](../../wrangler%20example.toml#L82)에 정리돼 있다.
+AI Search 원격 바인딩 인증은 이 앱의 `.dev.vars` secret이 아니라 Wrangler의 Cloudflare 로그인/계정을 사용한다. 위 선택 기능을 시험하지 않는 기본 UI·로컬 CRUD 테스트라면 `.dev.vars` 없이 시작할 수 있다. 프로젝트가 기대하는 secret 목록은 [`wrangler example.toml`](../../wrangler%20example.toml#L82)에 정리돼 있다.
 
 ## 로컬로 충분한 범위
 
-이 프로젝트가 쓰는 Assets, D1, R2, KV, Durable Objects는 모두 로컬 시뮬레이션을 지원한다. 따라서 UI·라우트·CRUD·미디어 업로드·세션/KV·`ADMIN_JOB_DO` 로직은 먼저 로컬에서 확인하면 된다. Workers AI만 로컬 시뮬레이션이 없으며, `RAG_SEARCH_ENABLED = "false"`여도 `[ai]` 바인딩 자체가 원격 연결을 만들 수 있으므로 `--local`을 강제하거나 해당 블록을 제거한다. ([Cloudflare: Development mode binding support](https://developers.cloudflare.com/workers/local-development/bindings-per-env/))
+이 프로젝트가 쓰는 Assets, D1, R2, KV, Durable Objects는 모두 로컬 시뮬레이션을 지원한다. 따라서 UI·라우트·CRUD·미디어 업로드·세션/KV·`ADMIN_JOB_DO` 로직은 먼저 로컬에서 확인하면 된다. AI Search만 원격 프록시가 필요하므로 일반 로컬 테스트에서는 해당 블록을 제거하고 `RAG_SEARCH_ENABLED = "false"`를 사용한다. ([Cloudflare: AI Search local development](https://developers.cloudflare.com/ai-search/api/search/workers-binding/))
 
 ## 원격이 필요한 경우
 
 - 실제 테스트용 D1/R2/KV가 필요하면 전체를 올리지 말고 해당 바인딩에만 `remote = true`를 둔다. Worker 코드는 계속 로컬에서 돈다. 원격 쓰기·삭제는 실제 데이터를 바꾸므로 프로덕션이 아닌 별도 staging 리소스를 써야 한다. ([Cloudflare: Remote bindings](https://developers.cloudflare.com/workers/local-development/#remote-bindings))
-- RAG/Workers AI를 켜거나 실제 원격 Durable Object·Cloudflare 네트워크 고유 동작을 확인해야 하면 원격 리소스 또는 `wrangler dev --remote`가 필요할 수 있다. Cloudflare는 `--remote`보다 로컬 실행 + 필요한 원격 바인딩만 쓰는 방식을 우선 권장한다. ([Cloudflare: Remote development](https://developers.cloudflare.com/workers/local-development/#wrangler-dev---remote-legacy))
+- RAG/AI Search를 켜거나 실제 원격 Durable Object·Cloudflare 네트워크 고유 동작을 확인해야 하면 필요한 바인딩에만 `remote = true`를 둔다. Cloudflare는 `wrangler dev --remote`보다 로컬 실행 + 필요한 원격 바인딩만 쓰는 방식을 우선 권장한다. ([Cloudflare: Remote development](https://developers.cloudflare.com/workers/local-development/#remote-bindings))
 - 외부 OAuth 콜백·웹훅·다른 기기에서 로컬 서버로 들어와야 할 뿐이라면 배포 대신 `wrangler dev --tunnel`로 공개 URL을 만들 수 있다. ([Cloudflare: Share a local dev server](https://developers.cloudflare.com/workers/local-development/local-dev-tunnels/))
 
 ## 이 프로젝트의 프리뷰 주의점
