@@ -9,9 +9,10 @@
 - [x] `wrangler dev --local` 확인
 - [x] Cloudflare Workers 온보딩 및 `workers.dev` 서브도메인 등록
 - [ ] R2 구독 활성화 (결제수단 등록이 필요해 보류)
-- [ ] 운영용 D1, R2, KV 생성
+- [x] 운영용 D1, KV 생성
+- [ ] 운영용 R2 생성
 - [ ] 운영 변수와 Secret 설정
-- [ ] 원격 D1 스키마 적용
+- [x] 원격 D1 스키마 적용
 - [ ] Worker 배포 및 스모크 테스트
 
 ## 1. `workers.dev` 서브도메인이란?
@@ -144,7 +145,7 @@ npx wrangler d1 execute DB --remote --file=migrations/schema.sql
 npm run deploy
 ```
 
-배포 후 Secret을 등록했다면 한 번 더 배포하고 다음을 확인한다.
+`wrangler secret put`은 새 Worker 버전을 만들어 바로 배포하므로 Secret 등록 뒤 별도 재배포는 필요 없다. 다음을 확인한다.
 
 - `/` 응답
 - OAuth callback 주소 일치 여부
@@ -152,7 +153,63 @@ npm run deploy
 - 관리자 계정 인식
 - `MCP_MODE`, 크롤링, 공개 범위 설정
 
+## 6. 커스텀 도메인을 구매한 뒤
+
+기존 D1, KV, R2를 다시 만들 필요는 없다. 같은 Worker에 새 공개 주소를 연결하고, 주소를 사용하는 설정만 바꾼다.
+
+아래 예시는 운영 주소를 `https://wiki.example.com`으로 정한 경우다. 루트 도메인을 쓸 경우 `wiki.example.com` 대신 `example.com`을 넣는다.
+
+### 6.1. 도메인을 Cloudflare에 연결
+
+구매한 도메인이 이 Worker와 같은 Cloudflare 계정의 활성 Zone이어야 한다. 다른 등록업체에서 구매했다면 먼저 Cloudflare에 사이트를 추가하고 안내된 네임서버로 변경한다.
+
+`wrangler.toml` 최상단의 `[build]`보다 앞에 다음을 추가한다. `pattern`에는 `https://`나 경로를 넣지 않는다.
+
+```toml
+# 전환 확인 중에는 기존 workers.dev 주소도 유지
+workers_dev = true
+
+[[routes]]
+pattern = "wiki.example.com"
+custom_domain = true
+```
+
+Custom Domain에서는 Worker가 원본 서버가 되며, Cloudflare가 필요한 DNS 레코드와 TLS 인증서를 관리한다.
+
+### 6.2. 공개 URL과 OAuth 콜백 변경
+
+같은 `wrangler.toml`의 `[vars]`에서 다음 값을 바꾼다.
+
+```toml
+GOOGLE_REDIRECT_URI = "https://wiki.example.com/auth/google/callback"
+MEDIA_PUBLIC_URL = "https://wiki.example.com/media"
+WIKI_PUBLIC_BASE_URL = "https://wiki.example.com"
+```
+
+Discord 로그인을 활성화했다면 `DISCORD_REDIRECT_URI`도 `https://wiki.example.com/auth/discord/callback`으로 바꾼다. D1/KV/R2 바인딩 ID, OAuth Client ID, Secret은 그대로 사용한다. 로컬 개발용 `.dev.vars`의 `http://localhost:8787/auth/google/callback`도 바꾸지 않는다.
+
+Google Cloud Console의 OAuth 클라이언트에는 배포 전에 다음 승인된 리디렉션 URI를 정확히 추가한다.
+
+```text
+https://wiki.example.com/auth/google/callback
+```
+
+현재 구현은 서버 측 OAuth라 **승인된 JavaScript 원본**은 필수가 아니다. 이미 원본을 등록해 관리하고 있다면 `https://wiki.example.com`도 추가한다.
+
+### 6.3. 배포하고 기존 주소 정리
+
+```sh
+npm run deploy
+```
+
+새 도메인에서 홈페이지, Google 로그인 콜백, `/media` 조회를 확인한다. 도메인이 달라지면 브라우저 쿠키도 별개이므로 기존 사용자는 새 주소에서 다시 로그인해야 한다.
+
+확인이 끝나면 중복 공개 주소를 남기지 않도록 `workers_dev = false`로 바꾸고 다시 배포한다. 그 뒤 Google Cloud Console에서 기존 `workers.dev` 콜백을 제거해도 된다.
+
+프리뷰 설정 생성기는 운영 `routes`를 자동으로 제외하므로 `wrangler.preview.toml`을 따로 수정하지 않는다.
+
 ## 참고
 
 - [Cloudflare Workers: workers.dev](https://developers.cloudflare.com/workers/configuration/routing/workers-dev/)
+- [Cloudflare Workers: Custom Domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/)
 - [Cloudflare R2: Get started](https://developers.cloudflare.com/r2/get-started/)
