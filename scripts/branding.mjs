@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 // Astro 빌드 시 이 모듈은 .astro-dist/.prerender/chunks/* 로 번들되므로 import.meta.url 기반
-// 상대경로가 깨진다. astro build 는 항상 레포 루트(npm 스크립트 실행 위치)에서 돌므로
+// 상대경로가 깨진다. astro build 는 항상 레포 루트(패키지 스크립트 실행 위치)에서 돌므로
 // process.cwd() 를 기준으로 wrangler.toml 을 찾는다.
 const WRANGLER_TOML = resolve(process.cwd(), 'wrangler.toml');
 

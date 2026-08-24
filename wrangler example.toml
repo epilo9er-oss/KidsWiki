@@ -6,7 +6,7 @@ compatibility_date = "2026-03-01"
 # - 입력: src/client/*.ts
 # - 출력: public/dist/*.js (Cloudflare Workers Assets로 서빙됨)
 [build]
-command = "npm run build"
+command = "bun run build"
 
 [assets]
 directory = "public"

@@ -2,10 +2,10 @@
   "name": "kidswiki",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "bun@1.4.0",
   "type": "module",
   "workspaces": [
-    "packages/*",
-    "cloudspace"
+    "packages/*"
   ],
   "scripts": {
     "predev": "node packages/wiki-shared/scripts/sync-render-css.mjs",
@@ -18,8 +18,8 @@
     "typecheck:client": "tsc --noEmit -p tsconfig.client.json",
     "generate:rules": "node scripts/generate-rules.mjs",
     "preview:config": "node scripts/make-preview-config.mjs",
-    "preview:init": "npm run test:preview-config && npm run preview:config && wrangler deploy -c wrangler.preview.toml",
-    "preview:deploy": "npm run test:preview-config && npm run preview:config && wrangler versions upload -c wrangler.preview.toml",
+    "preview:init": "bun run test:preview-config && bun run preview:config && wrangler deploy -c wrangler.preview.toml",
+    "preview:deploy": "bun run test:preview-config && bun run preview:config && wrangler versions upload -c wrangler.preview.toml",
     "test:preview-config": "node --test scripts/make-preview-config.test.mjs"
   },
   "dependencies": {

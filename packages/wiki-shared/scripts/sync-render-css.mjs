@@ -18,7 +18,7 @@ const DEST = resolve(here, '../../../public/render.css');
 const BANNER =
     '/* AUTO-GENERATED — 직접 수정하지 마세요.\n' +
     '   원본: packages/wiki-shared/src/render/render.css\n' +
-    '   재생성: node packages/wiki-shared/scripts/sync-render-css.mjs (npm run build 에 포함) */\n';
+    '   재생성: node packages/wiki-shared/scripts/sync-render-css.mjs (bun run build 에 포함) */\n';
 
 const css = await readFile(SRC, 'utf8');
 await mkdir(dirname(DEST), { recursive: true });
