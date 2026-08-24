@@ -361,8 +361,8 @@ async function handleImageUpload(
     if (!blob) return;
     const Swal = window.Swal;
 
-    if (blob.size > 15 * 1024 * 1024) {
-        Swal?.fire('오류', '파일 크기는 15MB 이하만 허용됩니다.', 'warning');
+    if (blob.size > 10 * 1024 * 1024) {
+        Swal?.fire('오류', '파일 크기는 10MB 이하만 허용됩니다.', 'warning');
         return;
     }
 

@@ -95,7 +95,7 @@ TURNSTILE_SITE_KEY = ""
 
 
 MEDIA_PUBLIC_URL = "https://도메인/media"
-MAX_UPLOAD_SIZE = "15728640" # 15MB, 변경 가능
+MAX_UPLOAD_SIZE = "10485760" # 10MB, 변경 가능
 WIKI_NAME = "키즈위키" # 변경 가능, 사이트 전역에 적용되는 위키 이름
 
 # Public 폴더에서 해당 이미지들을 교체하세요.

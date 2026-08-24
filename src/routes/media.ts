@@ -100,8 +100,8 @@ media.post('/api/media', requireAuth, requirePermission('media:upload'), async (
         );
     }
 
-    // 크기 검증 (환경변수 사용, 기본값 15MB)
-    const MAX_SIZE = parseInt(c.env.MAX_UPLOAD_SIZE || '15728640', 10);
+    // 크기 검증 (환경변수 사용, 기본값 10MB)
+    const MAX_SIZE = parseInt(c.env.MAX_UPLOAD_SIZE || '10485760', 10);
     if (file.size > MAX_SIZE) {
         const maxSizeMb = MAX_SIZE / (1024 * 1024);
         return c.json({ error: `파일 크기는 ${maxSizeMb}MB 이하만 허용됩니다.` }, 400);
