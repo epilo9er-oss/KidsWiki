@@ -4,12 +4,20 @@ import { getCookie } from 'hono/cookie';
 import type { Env } from '../../types';
 import { requireAuth, requireAuthAllowBanned } from '../../middleware/session';
 import { getSuperAdmins, isSuperAdmin, PRIVATE_AVATAR_PATH } from '../../utils/auth';
-import type { OAuthProvider, OAuthProfile, OAuthStateData } from './providers/base';
+import type { OAuthCallbackResult, OAuthProvider, OAuthProfile, OAuthStateData } from './providers/base';
 import { googleProvider } from './providers/google';
 import { discordProvider } from './providers/discord';
 import { naverProvider } from './providers/naver';
 import { kakaoProvider } from './providers/kakao';
-import { handleOAuthLink, handleOAuthLogin, handlePendingIdentityLink } from './common';
+import {
+    handleNewOAuthAccountChoice,
+    handleOAuthLink,
+    handleOAuthLogin,
+    handlePendingAccountMerge,
+    handlePendingIdentityAttach,
+    readPendingAccountMerge,
+    readPendingOAuthIdentity,
+} from './common';
 import type { RBAC } from '../../utils/role';
 import { enrichRole } from '../../utils/role';
 import type { AuthProvidersResponse } from '../../shared/api/auth';
@@ -18,8 +26,18 @@ import { signupPending } from '../../utils/webhook/events/signup';
 import { createNotification } from '../../utils/notification';
 import { sha256Hex } from '../../utils/oauth';
 import { ensureMcpInstantApplyMigration } from '../../utils/mcpInstantApplyMigration';
-import { ensureUserIdentities, findUserByIdentity, hasProviderIdentity, listUserIdentities, parsePendingIdentityLink, unlinkSecondaryIdentity } from './identities';
+import {
+    ensureUserIdentities,
+    findUserByIdentity,
+    findUserIdentity,
+    getAccountDeletionDecision,
+    getIdentityUnlinkDecision,
+    hasProviderIdentity,
+    listUserIdentities,
+    unlinkIdentity,
+} from './identities';
 import { isUserId, type UserId } from '../../shared/userId';
+import { resolveCanonicalUserId } from './accountMerge';
 
 const auth = new Hono<Env>();
 
@@ -41,6 +59,177 @@ function parseProviders(authProviders: string): string[] {
         .filter(Boolean);
 }
 
+type IdentityActionIntent = 'unlink' | 'delete_account';
+
+async function issueIdentityAction(
+    c: Context<Env>,
+    userId: UserId,
+    provider: string,
+    intent: IdentityActionIntent,
+): Promise<string> {
+    const token = crypto.randomUUID();
+    await c.env.KV.put(
+        `oauth_identity_action:${token}`,
+        JSON.stringify({ userId, provider, intent }),
+        { expirationTtl: 300 },
+    );
+    return token;
+}
+
+async function consumeIdentityAction(
+    c: Context<Env>,
+): Promise<{ userId: UserId; provider: string; intent: IdentityActionIntent } | null> {
+    const token = c.req.query('action_token');
+    if (!token || !/^[0-9a-f-]{36}$/i.test(token)) return null;
+
+    const key = `oauth_identity_action:${token}`;
+    const raw = await c.env.KV.get(key);
+    if (!raw) return null;
+    await c.env.KV.delete(key);
+    try {
+        const value = JSON.parse(raw) as { userId?: string; provider?: string; intent?: string };
+        if (!isUserId(value.userId) || typeof value.provider !== 'string') return null;
+        if (value.intent !== 'unlink' && value.intent !== 'delete_account') return null;
+        return { userId: value.userId, provider: value.provider, intent: value.intent };
+    } catch {
+        return null;
+    }
+}
+
+async function isLastActiveSuperAdmin(c: Context<Env>, userId: UserId): Promise<boolean> {
+    if (c.get('user')?.role !== 'super_admin') return false;
+    const emails = [...getSuperAdmins(c.env)];
+    if (emails.length === 0) return true;
+
+    const other = await c.env.DB.prepare(`
+        SELECT 1 FROM users
+        WHERE id != ? AND role != 'deleted'
+          AND email IN (${emails.map(() => '?').join(',')})
+        LIMIT 1
+    `).bind(userId, ...emails).first();
+    return !other;
+}
+
+async function invalidateUserSessionCaches(c: Context<Env>, userId: UserId): Promise<void> {
+    const sessions = await c.env.DB.prepare('SELECT id FROM sessions WHERE user_id = ?')
+        .bind(userId)
+        .all<{ id: string }>();
+    const ids = (sessions.results ?? []).map(session => session.id);
+    const results = await Promise.allSettled(ids.map(id => c.env.KV.delete(`session:${id}`)));
+    const failed = ids.filter((_, index) => results[index].status === 'rejected');
+    if (failed.length > 0) {
+        console.error(`Failed to invalidate ${failed.length} session cache entries; retrying`);
+        c.executionCtx.waitUntil(Promise.all(failed.map(id => c.env.KV.delete(`session:${id}`))).then(() => undefined));
+    }
+}
+
+async function finalizeAccountDeletion(c: Context<Env>, userId: UserId): Promise<void> {
+    const db = c.env.DB;
+    await ensureUserIdentities(db);
+
+    const sessions = await db.prepare('SELECT id FROM sessions WHERE user_id = ?')
+        .bind(userId)
+        .all<{ id: string }>();
+    const statements = [
+        db.prepare(
+            `UPDATE users SET role = 'deleted', name = '탈퇴한 사용자', picture = NULL, email = NULL WHERE id = ?`
+        ).bind(userId),
+        db.prepare('UPDATE user_identities SET provider_email = NULL WHERE user_id = ?').bind(userId),
+        db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId),
+        db.prepare('UPDATE oauth_tokens SET revoked_at = unixepoch() WHERE user_id = ? AND revoked_at IS NULL').bind(userId),
+        db.prepare('UPDATE oauth_codes SET used_at = unixepoch() WHERE user_id = ? AND used_at IS NULL').bind(userId),
+    ];
+    const hasMcpApiKeys = await db.prepare(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'mcp_api_keys'"
+    ).first();
+    if (hasMcpApiKeys) statements.push(db.prepare('DELETE FROM mcp_api_keys WHERE user_id = ?').bind(userId));
+    await db.batch(statements);
+
+    c.header('Set-Cookie', 'wiki_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
+    const ids = (sessions.results ?? []).map(session => session.id);
+    const results = await Promise.allSettled(ids.map(id => c.env.KV.delete(`session:${id}`)));
+    const failed = ids.filter((_, index) => results[index].status === 'rejected');
+    if (failed.length > 0) {
+        console.error(`Failed to invalidate ${failed.length} deleted-account session caches; retrying`);
+        c.executionCtx.waitUntil(Promise.all(failed.map(id => c.env.KV.delete(`session:${id}`))).then(() => undefined));
+    }
+}
+
+async function handleIdentityManagementCallback(
+    c: Context<Env>,
+    provider: OAuthProvider,
+    result: OAuthCallbackResult,
+): Promise<Response> {
+    const { profile, state, accessToken } = result;
+    const currentUser = c.get('user');
+    if (!currentUser || !state.userId || currentUser.id !== state.userId) {
+        return c.redirect('/mypage?identity_error=session_mismatch');
+    }
+    if (!state.expectedUid || profile.provider !== provider.name || profile.uid !== state.expectedUid) {
+        return c.redirect('/mypage?identity_error=identity_reauth_failed');
+    }
+
+    const identity = await findUserIdentity(c.env.DB, currentUser.id, provider.name);
+    if (!identity || identity.uid !== state.expectedUid) {
+        return c.redirect('/mypage?identity_error=identity_changed');
+    }
+
+    const identities = await listUserIdentities(c.env.DB, currentUser.id);
+    const superAdmin = currentUser.role === 'super_admin';
+    if (state.intent === 'unlink') {
+        const decision = getIdentityUnlinkDecision(identities, provider.name, superAdmin);
+        if (decision !== 'allowed') {
+            return c.redirect(`/mypage?identity_error=${encodeURIComponent(decision)}`);
+        }
+    } else {
+        const decision = getAccountDeletionDecision(
+            identities.length,
+            await isLastActiveSuperAdmin(c, currentUser.id),
+        );
+        if (decision !== 'allowed' || identities[0]?.provider !== provider.name) {
+            return c.redirect(`/mypage?identity_error=${encodeURIComponent(
+                decision === 'allowed' ? 'identity_changed' : decision,
+            )}`);
+        }
+    }
+
+    if (!provider.disconnect || !accessToken) {
+        return c.redirect('/mypage?identity_error=provider_disconnect_unsupported');
+    }
+
+    let disconnected = false;
+    try {
+        disconnected = await provider.disconnect(c, accessToken);
+    } catch (error) {
+        console.error(`${provider.name} OAuth disconnect failed:`, error);
+    }
+    if (!disconnected) {
+        return c.redirect('/mypage?identity_error=provider_disconnect_failed');
+    }
+
+    if (state.intent === 'unlink') {
+        try {
+            const unlinked = await unlinkIdentity(c.env.DB, currentUser.id, provider.name, superAdmin);
+            if (unlinked !== 'unlinked') {
+                return c.redirect(`/mypage?identity_error=${encodeURIComponent(unlinked)}`);
+            }
+            await invalidateUserSessionCaches(c, currentUser.id);
+            return c.redirect(`/mypage?identity_unlinked=${encodeURIComponent(provider.name)}`);
+        } catch (error) {
+            console.error('OAuth identity unlink failed:', error);
+            return c.redirect('/mypage?identity_error=unlink_failed');
+        }
+    }
+
+    try {
+        await finalizeAccountDeletion(c, currentUser.id);
+        return c.redirect('/?info=account_deleted');
+    } catch (error) {
+        console.error('Account deletion failed:', error);
+        return c.redirect('/mypage?identity_error=account_delete_failed');
+    }
+}
+
 // AUTH_PROVIDERS는 요청 시점에 env에서 가져와야 하므로, 모든 가능한 공급자 라우트를 등록하되
 // 활성화 여부를 라우트 핸들러에서 체크한다.
 for (const [name, provider] of Object.entries(providerRegistry)) {
@@ -50,29 +239,25 @@ for (const [name, provider] of Object.entries(providerRegistry)) {
             return c.json({ error: 'This auth provider is not enabled' }, 404);
         }
 
-        const pendingLinkToken = c.req.query('link_token');
-        if (pendingLinkToken) {
-            if (!/^[0-9a-f-]{36}$/i.test(pendingLinkToken)) {
-                return c.redirect('/?error=invalid_link_request');
-            }
-            const raw = await c.env.KV.get(`pending_identity_link:${pendingLinkToken}`);
-            if (!raw) return c.redirect('/?error=link_request_expired');
-            const pending = parsePendingIdentityLink(raw);
-            if (!pending) return c.redirect('/?error=invalid_link_request');
-            if (!pending.browserNonce || getCookie(c, 'oauth_link_nonce') !== pending.browserNonce) {
-                return c.redirect('/?error=invalid_link_request');
-            }
-            const target = await c.env.DB.prepare("SELECT provider FROM users WHERE id = ? AND role != 'deleted'")
-                .bind(pending.targetUserId)
-                .first<{ provider: string }>();
-            if (!target || target.provider !== name) {
-                return c.redirect('/?error=invalid_link_request');
-            }
+        const pendingIdentityToken = c.req.query('identity_token');
+        if (pendingIdentityToken) {
+            const pending = await readPendingOAuthIdentity(c, pendingIdentityToken);
+            if (!pending) return c.redirect('/?error=link_request_expired');
+            if (pending.profile.provider === name) return c.redirect('/?error=provider_already_linked');
             return provider.handleLogin(c, {
-                intent: 'confirm_link',
-                pendingLinkToken,
-                remember: !!pending.remember,
+                intent: 'attach_pending',
+                pendingIdentityToken,
             });
+        }
+
+        const pendingMergeToken = c.req.query('merge_token');
+        if (pendingMergeToken) {
+            const pending = await readPendingAccountMerge(c, pendingMergeToken);
+            const currentUser = c.get('user');
+            if (!pending || !currentUser || currentUser.id !== pending.survivorUserId || currentUser.provider !== name) {
+                return c.redirect('/mypage?identity_error=invalid_merge_request');
+            }
+            return provider.handleLogin(c, { intent: 'confirm_merge', pendingMergeToken });
         }
         return provider.handleLogin(c);
     });
@@ -89,13 +274,69 @@ for (const [name, provider] of Object.entries(providerRegistry)) {
         return provider.handleLogin(c, { intent: 'link', userId: user.id });
     });
 
+    auth.get(`/auth/${name}/unlink`, requireAuth, async (c) => {
+        const user = c.get('user')!;
+        const action = await consumeIdentityAction(c);
+        if (!action || action.userId !== user.id || action.provider !== name || action.intent !== 'unlink') {
+            return c.redirect('/mypage?identity_error=invalid_identity_action');
+        }
+        if (!provider.disconnect) {
+            return c.redirect('/mypage?identity_error=provider_disconnect_unsupported');
+        }
+
+        const identities = await listUserIdentities(c.env.DB, user.id);
+        const decision = getIdentityUnlinkDecision(identities, name, user.role === 'super_admin');
+        if (decision !== 'allowed') {
+            return c.redirect(`/mypage?identity_error=${encodeURIComponent(decision)}`);
+        }
+
+        const identity = await findUserIdentity(c.env.DB, user.id, name);
+        if (!identity) return c.redirect('/mypage?identity_error=not_found');
+        return provider.handleLogin(c, {
+            intent: 'unlink',
+            userId: user.id,
+            expectedUid: identity.uid,
+        });
+    });
+
+    auth.get(`/auth/${name}/delete-account`, requireAuth, async (c) => {
+        const user = c.get('user')!;
+        const action = await consumeIdentityAction(c);
+        if (!action || action.userId !== user.id || action.provider !== name || action.intent !== 'delete_account') {
+            return c.redirect('/mypage?identity_error=invalid_identity_action');
+        }
+        if (!provider.disconnect) {
+            return c.redirect('/mypage?identity_error=provider_disconnect_unsupported');
+        }
+
+        const identities = await listUserIdentities(c.env.DB, user.id);
+        const decision = getAccountDeletionDecision(
+            identities.length,
+            await isLastActiveSuperAdmin(c, user.id),
+        );
+        if (decision !== 'allowed') {
+            return c.redirect(`/mypage?identity_error=${encodeURIComponent(decision)}`);
+        }
+
+        const identity = await findUserIdentity(c.env.DB, user.id, name);
+        if (!identity || identities[0]?.provider !== name) {
+            return c.redirect('/mypage?identity_error=not_found');
+        }
+        return provider.handleLogin(c, {
+            intent: 'delete_account',
+            userId: user.id,
+            expectedUid: identity.uid,
+        });
+    });
+
     auth.get(`/auth/${name}/callback`, async (c) => {
         const active = parseProviders(c.env.AUTH_PROVIDERS);
-        if (!active.includes(name)) {
-            return c.json({ error: 'This auth provider is not enabled' }, 404);
-        }
         const result = await provider.handleCallback(c);
         if (result instanceof Response) return result;
+
+        if (!active.includes(name) && result.state.intent !== 'unlink' && result.state.intent !== 'delete_account') {
+            return c.json({ error: 'This auth provider is not enabled' }, 404);
+        }
 
         if (result.state.intent === 'refresh_picture') {
             return handleRefreshPicture(c, result.profile, result.state);
@@ -103,12 +344,24 @@ for (const [name, provider] of Object.entries(providerRegistry)) {
         if (result.state.intent === 'link') {
             return handleOAuthLink(c, result.profile, result.state);
         }
-        if (result.state.intent === 'confirm_link') {
-            return handlePendingIdentityLink(c, result.profile, result.state);
+        if (result.state.intent === 'attach_pending') {
+            return handlePendingIdentityAttach(c, result.profile, result.state);
+        }
+        if (result.state.intent === 'confirm_merge') {
+            return handlePendingAccountMerge(c, result.profile, result.state);
+        }
+        if (result.state.intent === 'unlink' || result.state.intent === 'delete_account') {
+            return handleIdentityManagementCallback(c, provider, result);
         }
         return handleOAuthLogin(c, result.profile, result.state.redirectUrl, result.state.remember);
     });
 }
+
+auth.post('/auth/identity-choice/new', async (c) => {
+    const body = await c.req.json<{ token?: string }>().catch(() => null);
+    if (!body?.token) return c.json({ redirect: '/?error=invalid_link_request' }, 400);
+    return handleNewOAuthAccountChoice(c, body.token);
+});
 
 /**
  * GET /auth/refresh-picture
@@ -213,24 +466,55 @@ auth.get('/api/me/identities', requireAuth, async (c) => {
     const user = c.get('user')!;
     const active = parseProviders(c.env.AUTH_PROVIDERS).filter(name => providerRegistry[name]);
     const identities = await listUserIdentities(c.env.DB, user.id);
+    const superAdmin = user.role === 'super_admin';
+    const accountDeletion = getAccountDeletionDecision(
+        identities.length,
+        identities.length === 1 && await isLastActiveSuperAdmin(c, user.id),
+    );
+    const accountProvider = identities.length === 1 ? providerRegistry[identities[0].provider] : undefined;
+    const accountDeletionReason = accountDeletion === 'allowed' && !accountProvider?.disconnect
+        ? 'provider_disconnect_unsupported'
+        : accountDeletion;
     return c.json({
-        identities: identities.map(identity => ({
-            ...identity,
-            label: providerRegistry[identity.provider]?.label || identity.provider,
-        })),
+        identities: identities.map(identity => {
+            const unlinkReason = getIdentityUnlinkDecision(identities, identity.provider, superAdmin);
+            const supported = !!providerRegistry[identity.provider]?.disconnect;
+            return {
+                ...identity,
+                label: providerRegistry[identity.provider]?.label || identity.provider,
+                can_unlink: unlinkReason === 'allowed' && supported,
+                unlink_reason: unlinkReason === 'allowed' && !supported
+                    ? 'provider_disconnect_unsupported'
+                    : unlinkReason,
+            };
+        }),
         available: active.map(name => ({ name, label: providerRegistry[name].label })),
+        account_deletion: {
+            allowed: accountDeletionReason === 'allowed',
+            reason: accountDeletionReason,
+        },
     });
 });
 
-/** 기본 로그인 수단은 유지하고 연결된 보조 OAuth identity만 해제한다. */
+/** CSRF 검증 후 공급자 재인증을 시작할 1회용 연결 해지 토큰을 발급한다. */
 auth.delete('/api/me/identities/:provider', requireAuth, async (c) => {
     const provider = c.req.param('provider').trim().toLowerCase();
     if (!providerRegistry[provider]) return c.json({ error: '알 수 없는 로그인 공급자입니다.' }, 400);
 
-    const result = await unlinkSecondaryIdentity(c.env.DB, c.get('user')!.id, provider);
-    if (result === 'primary') return c.json({ error: '기본 로그인 수단은 연결 해제할 수 없습니다.' }, 400);
-    if (result === 'not_found') return c.json({ error: '연결된 로그인 수단이 아닙니다.' }, 404);
-    return c.json({ success: true });
+    const user = c.get('user')!;
+    const identities = await listUserIdentities(c.env.DB, user.id);
+    const decision = getIdentityUnlinkDecision(identities, provider, user.role === 'super_admin');
+    if (decision !== 'allowed') {
+        return c.json({ error: '현재 상태에서는 이 로그인 연결을 해제할 수 없습니다.', code: decision }, 409);
+    }
+    if (!providerRegistry[provider].disconnect) {
+        return c.json({ error: '이 로그인 공급자는 아직 안전한 연결 해제를 지원하지 않습니다.' }, 400);
+    }
+    const actionToken = await issueIdentityAction(c, user.id, provider, 'unlink');
+    return c.json({
+        success: true,
+        reauth_url: `/auth/${encodeURIComponent(provider)}/unlink?action_token=${encodeURIComponent(actionToken)}`,
+    });
 });
 
 /**
@@ -265,7 +549,7 @@ auth.post('/api/auth/signup-request', async (c) => {
     const userInfo = JSON.parse(tokenData) as {
         provider: string;
         uid: string;
-        email: string;
+        email: string | null;
         name: string;
         picture: string;
     };
@@ -322,13 +606,13 @@ auth.post('/api/auth/signup-request', async (c) => {
     // 모든 관리자에게 알림 발송
     const admins = await db.prepare(
         "SELECT id, email FROM users WHERE role = 'admin' AND role != 'deleted'"
-    ).all<{ id: UserId; email: string }>();
+    ).all<{ id: UserId; email: string | null }>();
 
     const superAdminEmails = getSuperAdmins(c.env);
     const superAdminUsers = superAdminEmails.size > 0
         ? await db.prepare(
             `SELECT id, email FROM users WHERE email IN (${Array.from(superAdminEmails).map(() => '?').join(',')}) AND role != 'deleted'`
-        ).bind(...Array.from(superAdminEmails)).all<{ id: UserId; email: string }>()
+        ).bind(...Array.from(superAdminEmails)).all<{ id: UserId; email: string | null }>()
         : { results: [] };
 
     // 중복 제거하여 알림 대상 수집
@@ -705,12 +989,13 @@ auth.get('/api/me/watches', requireAuth, async (c) => {
  * 특정 유저의 공개 프로필 정보 반환
  */
 auth.get('/api/users/:id/profile', async (c) => {
-    const userId = c.req.param('id');
-    if (!isUserId(userId)) {
+    const requestedUserId = c.req.param('id');
+    if (!isUserId(requestedUserId)) {
         return c.json({ error: '유효하지 않은 사용자 ID입니다.' }, 400);
     }
 
     const db = c.env.DB;
+    const userId = await resolveCanonicalUserId(db, requestedUserId);
     const rbac = c.get('rbac') as RBAC;
     const viewer = c.get('user');
 
@@ -719,7 +1004,7 @@ auth.get('/api/users/:id/profile', async (c) => {
         const adminUser = await db
             .prepare('SELECT id, name, picture, role, banned_until, email, created_at FROM users WHERE id = ?')
             .bind(userId)
-            .first<{ id: UserId; name: string; picture: string; role: string; banned_until: number | null; email: string; created_at: number }>();
+            .first<{ id: UserId; name: string; picture: string; role: string; banned_until: number | null; email: string | null; created_at: number }>();
         if (!adminUser || adminUser.role === 'deleted') {
             return c.json({ error: '사용자를 찾을 수 없습니다.' }, 404);
         }
@@ -745,7 +1030,7 @@ auth.get('/api/users/:id/profile', async (c) => {
     const user = await db
         .prepare('SELECT id, name, picture, role, email, created_at FROM users WHERE id = ?')
         .bind(userId)
-        .first<{ id: UserId; name: string; picture: string; role: string; email: string; created_at: number }>();
+        .first<{ id: UserId; name: string; picture: string; role: string; email: string | null; created_at: number }>();
 
     if (!user || user.role === 'deleted') {
         return c.json({ error: '사용자를 찾을 수 없습니다.' }, 404);
@@ -769,12 +1054,13 @@ auth.get('/api/users/:id/profile', async (c) => {
  * 특정 유저의 편집(리비전) 내역 반환 (페이징: offset/limit)
  */
 auth.get('/api/users/:id/contributions', async (c) => {
-    const userId = c.req.param('id');
-    if (!isUserId(userId)) {
+    const requestedUserId = c.req.param('id');
+    if (!isUserId(requestedUserId)) {
         return c.json({ error: '유효하지 않은 사용자 ID입니다.' }, 400);
     }
 
     const db = c.env.DB;
+    const userId = await resolveCanonicalUserId(db, requestedUserId);
     const offset = parseInt(c.req.query('offset') || '0');
     const limit = Math.min(parseInt(c.req.query('limit') || '20'), 50);
 
@@ -1027,61 +1313,27 @@ auth.delete('/api/me/mcp-clients', requireAuthAllowBanned, async (c) => {
     return c.json({ success: true, count: result.meta.changes ?? 0 });
 });
 
-/**
- * DELETE /api/me/account
- * 회원탈퇴: role을 'deleted'로, 표시명을 '탈퇴한 사용자'로 변경하고 세션 삭제
- * 모든 OAuth 토큰을 revoke하고 MCP API 키를 삭제하여 잔존 토큰을 즉시 무효화한다.
- * 연결된 모든 provider + uid는 유지하여 재가입을 차단하되 공급자 이메일은 제거한다.
- */
+/** CSRF 검증 후 마지막 OAuth 공급자 재인증을 시작할 1회용 탈퇴 토큰을 발급한다. */
 auth.delete('/api/me/account', requireAuth, async (c) => {
     const user = c.get('user')!;
-    const db = c.env.DB;
-
-    await ensureUserIdentities(db);
-
-    // 1. role을 'deleted'로, 이름을 '탈퇴한 사용자'로, picture 제거
-    //    email은 UNIQUE 제약이 있으므로 id 기반의 유일한 placeholder로 설정
-    //    (다수 유저 탈퇴 시 UNIQUE 충돌 방지)
-    await db.prepare(
-        `UPDATE users SET role = 'deleted', name = '탈퇴한 사용자', picture = NULL, email = 'deleted:' || id WHERE id = ?`
-    ).bind(user.id).run();
-    await db.prepare('UPDATE user_identities SET provider_email = NULL WHERE user_id = ?').bind(user.id).run();
-
-    // 2. 해당 유저의 모든 세션 삭제
-    await db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id).run();
-
-    // 3. 모든 OAuth 토큰(access/refresh) 즉시 revoke
-    //    탈퇴 후에도 최대 1시간 유효하던 access token 잔존 문제를 차단한다.
-    await db.prepare(
-        'UPDATE oauth_tokens SET revoked_at = unixepoch() WHERE user_id = ? AND revoked_at IS NULL'
-    ).bind(user.id).run();
-
-    // 3-1. 미사용 인가 코드(oauth_codes) 무효화
-    //      승인 후 60초 내 토큰 교환 전 탈퇴 시 잔여 코드로 새 토큰이 발급되는 race 차단.
-    //      (oauth.ts 의 issueTokenPair 가 발급을 사용자 활성 확인과 원자적으로 묶어 최종 방어한다.)
-    await db.prepare(
-        'UPDATE oauth_codes SET used_at = unixepoch() WHERE user_id = ? AND used_at IS NULL'
-    ).bind(user.id).run();
-
-    // 4. MCP API 키 삭제
-    //    탈퇴 후에도 최대 30일 유효하던 MCP API 키 잔존 문제를 차단한다.
-    //    (마이그레이션 전 등으로 테이블이 없을 수 있으므로 조용히 무시)
-    try {
-        await db.prepare('DELETE FROM mcp_api_keys WHERE user_id = ?').bind(user.id).run();
-    } catch (err: any) {
-        if (!err?.message?.includes('no such table')) throw err;
+    const identities = await listUserIdentities(c.env.DB, user.id);
+    const decision = getAccountDeletionDecision(
+        identities.length,
+        await isLastActiveSuperAdmin(c, user.id),
+    );
+    if (decision !== 'allowed') {
+        return c.json({ error: '현재 상태에서는 탈퇴할 수 없습니다.', code: decision }, 409);
     }
 
-    // 5. KV 세션 캐시 무효화 (현재 세션)
-    const sessionId = getCookie(c, 'wiki_session');
-    if (sessionId) {
-        await c.env.KV.delete(`session:${sessionId}`);
+    const provider = identities[0]?.provider;
+    if (!provider || !providerRegistry[provider]?.disconnect) {
+        return c.json({ error: '이 로그인 공급자는 아직 안전한 탈퇴를 지원하지 않습니다.' }, 400);
     }
-
-    // 6. 쿠키 제거
-    c.header('Set-Cookie', 'wiki_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
-
-    return c.json({ success: true });
+    const actionToken = await issueIdentityAction(c, user.id, provider, 'delete_account');
+    return c.json({
+        success: true,
+        reauth_url: `/auth/${encodeURIComponent(provider)}/delete-account?action_token=${encodeURIComponent(actionToken)}`,
+    });
 });
 
 /**

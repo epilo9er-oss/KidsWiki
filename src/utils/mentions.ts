@@ -7,6 +7,8 @@
 import type { Env } from '../types';
 import { ROLE_CASE_SQL, enrichRoles } from './role';
 import { extractMentionIds, stripMarkdownCode } from '../shared/mentions';
+import type { UserId } from '../shared/userId';
+import { resolveCanonicalUserIds } from '../routes/auth/accountMerge';
 
 export interface MentionRecipient {
     id: string;
@@ -50,7 +52,10 @@ export async function resolveMentionRecipients(
     excludeUserId: string,
 ): Promise<MentionRecipient[]> {
     // 코드(펜스/인라인) 안의 멘션은 가짜 핑이므로 추출 전에 제거한다.
-    const ids = extractMentionIds(stripMarkdownCode(content)).filter((id) => id !== excludeUserId);
+    const rawIds = extractMentionIds(stripMarkdownCode(content)) as UserId[];
+    const aliases = await resolveCanonicalUserIds(db, rawIds);
+    const ids = Array.from(new Set(rawIds.map(id => aliases.get(id) ?? id)))
+        .filter((id) => id !== excludeUserId);
     if (ids.length === 0) return [];
     const out: MentionRecipient[] = [];
     for (const batch of chunk(ids, D1_BIND_LIMIT)) {
@@ -62,7 +67,7 @@ export async function resolveMentionRecipients(
                    AND u.role != 'deleted'`,
             )
             .bind(...batch)
-            .all<MentionRecipient & { email?: string }>();
+            .all<MentionRecipient & { email?: string | null }>();
         const rows = results ?? [];
         // 슈퍼 관리자 이메일 보정 후 email 필드 제거
         enrichRoles(rows as any[], 'role', 'email', env);
@@ -89,17 +94,24 @@ export async function buildMentionUserMap(
     for (const content of contents) {
         for (const id of extractMentionIds(stripMarkdownCode(content))) idSet.add(id);
     }
-    const ids = Array.from(idSet);
-    if (ids.length === 0) return {};
+    const rawIds = Array.from(idSet) as UserId[];
+    if (rawIds.length === 0) return {};
+    const aliases = await resolveCanonicalUserIds(db, rawIds);
+    const ids = Array.from(new Set(rawIds.map(id => aliases.get(id) ?? id)));
     const map: Record<string, { name: string }> = {};
+    const canonicalNames = new Map<string, string>();
     for (const batch of chunk(ids, D1_BIND_LIMIT)) {
         const { results } = await db
             .prepare(`SELECT id, name FROM users WHERE id IN (${placeholders(batch.length)})`)
             .bind(...batch)
             .all<{ id: string; name: string }>();
         for (const row of results ?? []) {
-            map[String(row.id)] = { name: row.name };
+            canonicalNames.set(String(row.id), row.name);
         }
+    }
+    for (const rawId of rawIds) {
+        const name = canonicalNames.get(aliases.get(rawId) ?? rawId);
+        if (name) map[rawId] = { name };
     }
     return map;
 }

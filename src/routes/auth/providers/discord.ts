@@ -94,6 +94,7 @@ export const discordProvider: OAuthProvider = {
                 picture,
             },
             state: stateData,
+            accessToken: tokenData.access_token,
         };
     },
 };

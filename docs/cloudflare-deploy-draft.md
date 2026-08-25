@@ -161,9 +161,13 @@ npx wrangler secret put NAVER_CLIENT_SECRET
 npx wrangler secret put KAKAO_CLIENT_SECRET
 ```
 
-네이버 앱에는 서비스 URL과 `/auth/naver/callback`을 등록하고, 제공 정보에서 회원 식별자와 이메일을 허용한다. 카카오 앱에는 `/auth/kakao/callback`을 Redirect URI로 등록하고 동의 항목의 닉네임·프로필 사진·카카오계정(이메일)을 설정한다. 공급자가 이메일을 내려주지 않거나 카카오 이메일이 유효·인증 상태가 아니면 기존 계정에 수동 연결은 가능하지만 그 공급자로 신규 가입은 할 수 없다. ([네이버 로그인 개발가이드](https://developers.naver.com/docs/login/devguide/devguide.md), [Kakao Login REST API](https://developers.kakao.com/docs/latest/ko/kakaologin/rest-api))
+네이버 앱에는 서비스 URL과 `/auth/naver/callback`을 등록한다. 기본 제공되는 이용자 식별자만으로 가입할 수 있으므로 이메일 등 추가 제공 정보는 실제 서비스에서 사용할 때만 요청한다. 카카오 앱에는 `/auth/kakao/callback`을 Redirect URI로 등록하며, 카카오 회원번호만으로도 가입할 수 있다. 닉네임·프로필 사진·이메일 동의 항목도 실제 사용 목적이 있을 때만 추가한다. ([네이버 로그인 개발가이드](https://developers.naver.com/docs/login/devguide/devguide.md), [Kakao Login 이해하기](https://developers.kakao.com/docs/ko/kakaologin/common))
 
-여러 공급자의 이메일이 같아도 서버는 자동 병합하지 않는다. 새 공급자 로그인 뒤 기존 계정의 기본 공급자로 다시 인증하거나, 로그인된 상태에서 마이페이지의 **로그인 계정**에서 직접 연결해야 한다. 기본 로그인 수단은 해제할 수 없고 보조 수단만 해제할 수 있다.
+처음 보는 OAuth 로그인은 즉시 계정을 만들지 않고 **새 계정으로 가입** 또는 **기존 계정에 연결**을 먼저 묻는다. 공급자가 이메일을 주지 않아도 새 계정으로 가입할 수 있으며, 이메일만으로 자동 연결하지 않는다. 제공된 이메일이 이미 사용 중이면 신규 계정을 만들지 않고 기존 계정 인증을 안내한다.
+
+마이페이지에서는 로그인 연결이 2개 이상인 일반 사용자가 어느 연결이든 해지할 수 있다. 기준 로그인을 해지하면 남은 연결 하나가 새 기준 로그인이 된다. 마지막 연결에는 **연동 해지** 대신 **회원 탈퇴**가 표시된다. 최고 관리자는 기준 로그인을 유지한 채 추가 연결부터 해지해야 하며, 마지막 활성 최고 관리자는 다른 최고 관리자를 먼저 지정해야 탈퇴할 수 있다. 해지와 탈퇴는 대상 공급자로 다시 인증한 뒤 Google·네이버·카카오의 공급자 측 연결 해제 성공을 확인하고 로컬 DB를 변경한다. 단기 access token은 이 과정에서 즉시 사용하고 저장하지 않으므로 별도 D1 마이그레이션은 없다.
+
+이미 서로 다른 OAuth로 별도 계정이 만들어졌다면 대표로 남길 계정에 로그인한 뒤 마이페이지의 **로그인 계정**에서 다른 공급자를 연결한다. 다른 계정 소유가 확인되면 현재 계정의 기본 OAuth까지 다시 인증한 뒤 기여·알림·쪽지·주시 목록과 OAuth identity를 현재 계정으로 합친다. 흡수 계정의 세션과 MCP/OAuth 토큰은 폐기하고 예전 사용자 ID는 `user_id_aliases`로 보존한다. 같은 공급자가 양쪽에 있거나, 탈퇴·차단·관리 권한 계정이거나, 같은 문서의 MCP 초안/편집 요청이 양쪽에 있으면 데이터 손실을 피하기 위해 자동 병합하지 않는다.
 
 다음 Secret은 해당 기능을 쓸 때만 추가한다.
 
@@ -176,12 +180,17 @@ npx wrangler secret put KAKAO_CLIENT_SECRET
 
 리소스 ID가 연결된 뒤 운영 D1에 스키마를 적용한다. 이 명령은 로컬 DB가 아니라 원격 DB를 변경한다.
 
+기존 Base58 사용자 ID 스키마를 쓰는 운영 D1도 계정 별칭용 `user_id_aliases` 테이블이 추가되었으므로 배포 전에 아래 명령을 다시 실행한다. `CREATE TABLE/INDEX IF NOT EXISTS`와 `INSERT OR IGNORE`로 구성되어 기존 사용자 데이터는 초기화하지 않는다.
+
 > 숫자형 `users.id`를 사용하던 개발 DB가 있다면 이번에는 증분 적용할 수 없다. `users.id`와 모든 사용자 참조가 22자리 Base58 `TEXT`로 바뀌었으므로, 출시 전 D1을 새로 만들고 `wrangler.toml`의 `database_id`를 새 값으로 교체한 뒤 아래 스키마를 적용한다. 기존 숫자 ID가 든 `session:*` KV 캐시는 새 코드가 자동 폐기하므로 KV namespace를 다시 만들 필요는 없다. R2도 ID 전환 때문에 지울 필요는 없지만, D1 미디어 행도 초기화되므로 기존 객체는 더 이상 참조되지 않는다.
 
 ```sh
 npx wrangler d1 execute DB --remote --file=migrations/schema.sql
+npm run db:migrate:remote
 npm run deploy
 ```
+
+기존 운영 D1은 `db:migrate:remote`가 `users.email`과 `signup_requests.email`을 선택값으로 바꾸면서 사용자 및 외래 키 데이터를 보존한다. 새 D1도 같은 명령을 실행해 적용 이력을 기록한다.
 
 RAG를 처음 켠 배포라면 최고 관리자로 `/admin-bulk-manage`에 접속해 **RAG 백필**을 한 번 실행한다. 이 작업은 기존 문서의 현행 본문을 `RAG_BUCKET`에 복사하며, 이후 문서 편집은 자동으로 미러링된다. AI Search의 다음 R2 동기화가 끝났는지 확인한다.
 

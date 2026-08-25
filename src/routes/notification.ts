@@ -190,7 +190,7 @@ notificationRoutes.post('/messages', requireAuthAllowBanned, async (c) => {
 
     // 수신자 존재 확인
     const receiver = await db.prepare('SELECT id, name, role, email FROM users WHERE id = ?')
-        .bind(receiver_id).first<{ id: string; name: string; role: string; email: string }>();
+        .bind(receiver_id).first<{ id: string; name: string; role: string; email: string | null }>();
     if (!receiver) {
         return c.json({ error: '수신자를 찾을 수 없습니다.' }, 404);
     }
@@ -236,7 +236,7 @@ notificationRoutes.post('/messages', requireAuthAllowBanned, async (c) => {
         // 원본 발신자의 역할 확인 (관리자/토론관리자가 보낸 쪽지여야 답장 가능)
         // super_admin은 DB role 컬럼에 저장되지 않을 수 있으므로 이메일 기반으로도 확인
         const originalSender = await db.prepare('SELECT role, email FROM users WHERE id = ?')
-            .bind(originalMsg.sender_id).first<{ role: string; email: string }>();
+            .bind(originalMsg.sender_id).first<{ role: string; email: string | null }>();
         const senderCanBypass = originalSender && (
             rbac.can(originalSender.role, 'admin:access') ||
             rbac.can(originalSender.role, 'discussion:manage') ||

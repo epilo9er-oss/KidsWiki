@@ -21,6 +21,9 @@ export interface OAuthProvider {
 
     /** OAuth 콜백 처리 → 프로필 + state 데이터 반환 */
     handleCallback(c: Context<Env>): Promise<OAuthCallbackResult | Response>;
+
+    /** 재인증 직후 받은 access token으로 공급자 측 연결을 해제한다. */
+    disconnect?(c: Context<Env>, accessToken: string): Promise<boolean>;
 }
 
 /**
@@ -29,7 +32,7 @@ export interface OAuthProvider {
 export interface OAuthProfile {
     provider: string;
     uid: string;
-    /** 공급자 동의 범위에 따라 없을 수 있다. 신규 가입에는 검증된 이메일이 필수다. */
+    /** 공급자 동의 범위에 따라 없을 수 있는 선택 프로필 정보다. 로그인 식별에는 사용하지 않는다. */
     email?: string;
     name: string;
     picture?: string;
@@ -40,21 +43,26 @@ export interface OAuthProfile {
  * - login: 일반 로그인 흐름
  * - refresh_picture: 로그인 상태에서 프로필 사진만 갱신
  * - link: 현재 로그인 계정에 새 공급자 연결
- * - confirm_link: 같은 이메일 계정 후보를 기존 기본 공급자로 재인증
+ * - attach_pending: 아직 등록되지 않은 OAuth identity를 기존 계정에 연결
+ * - confirm_merge: 이미 별도 생성된 두 계정의 소유권을 재확인한 뒤 병합
+ * - unlink: 재인증 후 현재 계정에서 OAuth identity 연결 해제
+ * - delete_account: 마지막 identity 재인증 후 회원 탈퇴
  */
 export interface OAuthStateData {
     provider: string;
-    intent: 'login' | 'refresh_picture' | 'link' | 'confirm_link';
-    /** refresh_picture 의도일 때 갱신 대상 유저 id */
+    intent: 'login' | 'refresh_picture' | 'link' | 'attach_pending' | 'confirm_merge' | 'unlink' | 'delete_account';
+    /** 로그인된 계정에서 실행하는 의도일 때 대상 유저 id */
     userId?: UserId;
-    /** refresh_picture 의도일 때 기대되는 공급자 측 uid */
+    /** 재인증 결과와 일치해야 하는 공급자 측 uid */
     expectedUid?: string;
     /** 로그인 완료 후 이동할 상대경로 URL (/ 시작, // 미시작인 경우만 유효) */
     redirectUrl?: string;
     /** "로그인 유지" 체크 여부. true 면 세션을 매우 길게, 아니면 6시간으로 발급한다. */
     remember?: boolean;
-    /** confirm_link 의도에서 서버 KV에 보관한 연결 후보 토큰 */
-    pendingLinkToken?: string;
+    /** attach_pending 의도에서 서버 KV에 보관한 미등록 identity 토큰 */
+    pendingIdentityToken?: string;
+    /** confirm_merge 의도에서 서버 KV에 보관한 계정 병합 토큰 */
+    pendingMergeToken?: string;
 }
 
 /**
@@ -63,4 +71,6 @@ export interface OAuthStateData {
 export interface OAuthCallbackResult {
     profile: OAuthProfile;
     state: OAuthStateData;
+    /** 연결 해제/탈퇴 콜백에서 즉시 사용하고 저장하지 않는 단기 access token */
+    accessToken: string;
 }

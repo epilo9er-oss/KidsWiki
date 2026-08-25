@@ -23,7 +23,8 @@ export async function createOAuthState(
         expectedUid: stateData?.expectedUid,
         redirectUrl: safeRelativeUrl(stateData?.redirectUrl ?? c.req.query('redirect')),
         remember: stateData?.remember ?? (c.req.query('remember') === '1'),
-        pendingLinkToken: stateData?.pendingLinkToken,
+        pendingIdentityToken: stateData?.pendingIdentityToken,
+        pendingMergeToken: stateData?.pendingMergeToken,
     };
     await c.env.KV.put(`oauth_state:${state}`, JSON.stringify(payload), { expirationTtl: STATE_TTL_SECONDS });
     return state;

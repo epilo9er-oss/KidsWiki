@@ -11,7 +11,7 @@ const COLOR_JOINED = 0x2ECC71; // 초록 — 환영
 export function signupPending(args: {
     requestId: number;
     name: string;
-    email: string;
+    email: string | null;
     provider: string;
     env: Env['Bindings'];
 }): WebhookEvent {
@@ -29,7 +29,7 @@ export function signupPending(args: {
             title: '🆕 가입 신청',
             description,
             fields: [
-                { name: '이메일', value: `\`${escapeMd(email)}\``, inline: true },
+                ...(email ? [{ name: '이메일', value: `\`${escapeMd(email)}\``, inline: true }] : []),
                 { name: '공급자', value: escapeMd(provider), inline: true },
             ],
             footer: { text: `Request #${requestId}` },
@@ -40,7 +40,7 @@ export function signupPending(args: {
 
 export function signupRejected(args: {
     name: string;
-    email: string;
+    email: string | null;
     actorName: string;
     reason?: string | null;
 }): WebhookEvent {
@@ -55,7 +55,9 @@ export function signupRejected(args: {
         embed: {
             color: COLOR_REJECTED,
             title: '🚫 가입 신청 거부',
-            description: `**${escapeMd(name)}** (\`${escapeMd(email)}\`) 의 가입 신청이 거부되었습니다.`,
+            description: email
+                ? `**${escapeMd(name)}** (\`${escapeMd(email)}\`) 의 가입 신청이 거부되었습니다.`
+                : `**${escapeMd(name)}** 님의 가입 신청이 거부되었습니다.`,
             author: { name: `by ${actorName}` },
             fields,
             timestamp: nowIso(),

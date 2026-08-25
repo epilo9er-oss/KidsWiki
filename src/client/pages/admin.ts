@@ -680,7 +680,7 @@ import { renderUserAvatar } from '../utils/avatar';
             (r) => `<tr>
                 <td>${renderUserAvatar(r.picture, r.name, 24)}</td>
                 <td class="fw-bold small">${window.escapeHtml(r.name)}</td>
-                <td class="small">${window.escapeHtml(r.email)}</td>
+                <td class="small">${r.email ? window.escapeHtml(r.email) : '<span class="text-muted">제공 안 됨</span>'}</td>
                 <td><span class="badge bg-info">${r.status}</span></td>
                 <td>
                     <button class="btn btn-xs btn-outline-success" onclick="approveSignup(${r.id})">승인</button>

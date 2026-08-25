@@ -15,7 +15,7 @@ export interface User {
     id: UserId;
     provider: string;    // 기본 OAuth 로그인 공급자. 전체 연결 목록은 user_identities 참조
     uid: string;         // 기본 공급자 측 사용자 ID
-    email: string;
+    email: string | null;
     name: string;
     picture: string | null;
     /** 프로필 사진 비공개 여부(1=비공개, picture 가 정적 기본 아바타로 고정됨) */

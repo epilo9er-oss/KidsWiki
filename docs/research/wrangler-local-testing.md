@@ -25,6 +25,8 @@ npm run setup:local
 npm run dev:local
 ```
 
+이미 만든 로컬 D1도 스키마나 D1 마이그레이션이 추가된 버전을 받은 뒤에는 `npm run setup:local`을 한 번 더 실행한다. 이 명령은 빠진 테이블을 보완하고 아직 적용하지 않은 `d1-migrations`를 실행하며 기존 Base58 사용자 데이터를 유지한다.
+
 숫자형 사용자 ID를 쓰던 로컬 상태에서 새 Base58 사용자 ID 스키마로 전환할 때는 `.wrangler/state`를 한 번 지운 뒤 `npm run setup:local`을 다시 실행한다. 이 작업은 로컬 D1·KV·R2 테스트 데이터 전체를 지우므로 필요한 자료가 없는 개발 환경에서만 한다.
 
 AI Search는 로컬 시뮬레이션 대신 원격 프록시를 사용한다. 일반 로컬 테스트에서는 `[[ai_search]]` 블록을 주석 처리하고 `RAG_SEARCH_ENABLED = "false"`를 유지한다. 로컬 Worker에서 실제 AI Search를 시험할 때만 바인딩에 `remote = true`를 추가한다.

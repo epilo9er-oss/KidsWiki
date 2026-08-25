@@ -12,7 +12,7 @@
 //    전역 스코프에서 실행되므로 viewMessage(common.ts 전역)는 문자열 안에서 bare 로 둔다.
 //  - HTML(정적 + innerHTML)의 on* 속성에서 호출되는, 이 블록에서 정의한 함수
 //    (updateName / loadMoreMessages / loadMoreSentMessages / loadMoreMyDiscussions /
-//     revokeAllSessions / revokeAllMcpClients / deleteAccount / refreshProfilePicture /
+//     revokeAllSessions / revokeAllMcpClients / refreshProfilePicture /
 //     deleteDirectMessage / revokeSession / viewSentMessage)는 파일 끝에서 window.* 로 노출한다.
 
 import { renderUserAvatar } from '../utils/avatar';
@@ -100,13 +100,34 @@ import { renderUserAvatar } from '../utils/avatar';
             });
         }
 
-        function showIdentityUpdateResult() {
+        async function showIdentityUpdateResult() {
             const params = new URLSearchParams(window.location.search);
             const linked = params.get('identity_linked');
+            const unlinked = params.get('identity_unlinked');
+            const merged = params.get('identity_merged');
             const error = params.get('identity_error');
-            if (!linked && !error) return;
+            const mergeToken = params.get('identity_merge');
+            const mergePrimary = params.get('merge_primary');
+            const mergeCandidate = params.get('merge_candidate');
+            if (!linked && !unlinked && !merged && !error && !mergeToken) return;
 
             window.history.replaceState({}, '', window.location.pathname + window.location.hash);
+            if (mergeToken && mergePrimary && /^[0-9a-f-]{36}$/i.test(mergeToken)) {
+                const labels = { google: 'Google', discord: 'Discord', naver: '네이버', kakao: '카카오' };
+                const result = await Swal.fire({
+                    icon: 'warning',
+                    title: '이미 별도 계정으로 사용 중입니다',
+                    text: `${labels[mergeCandidate] || mergeCandidate} 계정의 기여·알림·로그인 수단을 현재 계정으로 합칩니다. 다른 계정의 세션은 모두 종료되며 되돌릴 수 없습니다.`,
+                    showCancelButton: true,
+                    confirmButtonText: `${labels[mergePrimary] || mergePrimary}로 다시 인증하고 합치기`,
+                    cancelButtonText: '취소',
+                    confirmButtonColor: '#dc3545',
+                });
+                if (result.isConfirmed) {
+                    window.location.href = `/auth/${encodeURIComponent(mergePrimary)}?merge_token=${encodeURIComponent(mergeToken)}`;
+                }
+                return;
+            }
             if (linked) {
                 Swal.fire({
                     icon: 'success',
@@ -118,6 +139,25 @@ import { renderUserAvatar } from '../utils/avatar';
                 });
                 return;
             }
+            if (unlinked) {
+                Swal.fire({
+                    icon: 'success',
+                    title: '로그인 연결을 해지했습니다.',
+                    toast: true,
+                    position: 'top-end',
+                    showConfirmButton: false,
+                    timer: 1800,
+                });
+                return;
+            }
+            if (merged) {
+                Swal.fire({
+                    icon: 'success',
+                    title: '계정을 안전하게 합쳤습니다.',
+                    text: '이제 연결된 어느 로그인 수단으로 인증해도 현재 계정으로 로그인됩니다.',
+                });
+                return;
+            }
 
             const messages = {
                 session_mismatch: '로그인 세션이 바뀌었습니다. 다시 시도해주세요.',
@@ -125,6 +165,26 @@ import { renderUserAvatar } from '../utils/avatar';
                 provider_already_linked: '해당 공급자의 로그인 계정이 이미 연결되어 있습니다.',
                 identity_in_use: '이 로그인 계정은 이미 다른 사용자에게 연결되어 있습니다.',
                 user_not_found: '사용자 계정을 찾을 수 없습니다.',
+                invalid_merge_request: '계정 병합 요청이 만료되었거나 올바르지 않습니다.',
+                merge_reauth_failed: '현재 계정과 동일한 기본 로그인 수단으로 다시 인증해야 합니다.',
+                merge_identity_changed: '합칠 계정의 로그인 정보가 바뀌었습니다. 처음부터 다시 시도해주세요.',
+                account_inactive: '탈퇴 또는 차단된 계정은 합칠 수 없습니다.',
+                privileged_account: '관리 권한이 있는 계정은 자동으로 합칠 수 없습니다.',
+                provider_conflict: '두 계정에 같은 공급자의 로그인이 있어 자동으로 합칠 수 없습니다.',
+                draft_conflict: '두 계정에 같은 문서의 MCP 초안이 있어 먼저 하나를 정리해야 합니다.',
+                pending_edit_conflict: '두 계정에 같은 문서의 편집 요청이 있어 먼저 하나를 정리해야 합니다.',
+                not_found: '연결된 로그인 계정을 찾을 수 없습니다.',
+                last_identity: '마지막 로그인 계정은 연결 해지 대신 회원 탈퇴를 이용해주세요.',
+                primary_super_admin: '최고 관리자의 기준 로그인은 추가 연결을 먼저 해지한 뒤 탈퇴할 수 있습니다.',
+                links_remaining: '회원 탈퇴 전에 추가 로그인 연결을 먼저 해지해주세요.',
+                last_super_admin: '마지막 활성 최고 관리자는 탈퇴할 수 없습니다. 다른 최고 관리자를 먼저 지정해주세요.',
+                identity_reauth_failed: '해지하려는 로그인 계정과 동일한 계정으로 다시 인증해주세요.',
+                identity_changed: '로그인 연결 정보가 변경되었습니다. 처음부터 다시 시도해주세요.',
+                invalid_identity_action: '연동 관리 요청이 만료되었거나 올바르지 않습니다. 다시 시도해주세요.',
+                provider_disconnect_unsupported: '이 로그인 공급자는 아직 안전한 연결 해제를 지원하지 않습니다.',
+                provider_disconnect_failed: '로그인 공급자에서 연결을 해제하지 못했습니다. 잠시 후 다시 시도해주세요.',
+                unlink_failed: '공급자 연결은 해제했지만 위키 계정 반영에 실패했습니다. 다시 인증해 시도해주세요.',
+                account_delete_failed: '공급자 연결은 해제했지만 회원 탈퇴 처리에 실패했습니다. 다시 인증해 시도해주세요.',
             };
             Swal.fire('계정 연결 실패', messages[error] || '로그인 계정을 연결하지 못했습니다.', 'error');
         }
@@ -137,17 +197,35 @@ import { renderUserAvatar } from '../utils/avatar';
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || '불러오기 실패');
 
-                const linked = new Set((data.identities || []).map(identity => identity.provider));
-                const rows = (data.identities || []).map(identity => `
+                const identities = data.identities || [];
+                const linked = new Set(identities.map(identity => identity.provider));
+                const rows = identities.map(identity => {
+                    const lockedPrimary = identity.unlink_reason === 'primary_super_admin';
+                    const soleLastAdmin = identities.length === 1 && data.account_deletion?.reason === 'last_super_admin';
+                    const unsupported = identity.unlink_reason === 'provider_disconnect_unsupported'
+                        || data.account_deletion?.reason === 'provider_disconnect_unsupported';
+                    const action = identity.can_unlink
+                        ? `<button type="button" class="btn btn-sm btn-outline-danger" data-identity-unlink="${window.escapeHtml(identity.provider)}">연동 해지</button>`
+                        : identities.length === 1 && data.account_deletion?.allowed
+                            ? `<button type="button" class="btn btn-sm btn-outline-danger" data-identity-delete="${window.escapeHtml(identity.provider)}">회원 탈퇴</button>`
+                            : lockedPrimary
+                                ? `<span class="text-muted" tabindex="0" role="img" aria-label="다른 로그인 연결을 모두 해지하면 회원 탈퇴가 활성화됩니다." title="다른 로그인 연결을 모두 해지하면 회원 탈퇴가 활성화됩니다."><i class="mdi mdi-lock-outline"></i></span>`
+                                : soleLastAdmin
+                                    ? `<span class="text-muted" tabindex="0" role="img" aria-label="다른 활성 최고 관리자를 먼저 지정해야 탈퇴할 수 있습니다." title="다른 활성 최고 관리자를 먼저 지정해야 탈퇴할 수 있습니다."><i class="mdi mdi-lock-outline"></i></span>`
+                                    : unsupported
+                                        ? `<span class="text-muted" tabindex="0" role="img" aria-label="이 로그인 공급자는 아직 안전한 연결 해제를 지원하지 않습니다." title="이 로그인 공급자는 아직 안전한 연결 해제를 지원하지 않습니다."><i class="mdi mdi-lock-outline"></i></span>`
+                                        : '';
+                    return `
                     <div class="d-flex align-items-center justify-content-between gap-2 rounded border px-3 py-2">
                         <div class="min-w-0">
                             <strong>${window.escapeHtml(identity.label)}</strong>
-                            ${identity.primary ? '<span class="badge bg-primary ms-1">기본</span>' : '<span class="badge bg-secondary ms-1">연결됨</span>'}
+                            ${identity.primary ? '<span class="badge bg-primary ms-1">기준 로그인</span>' : '<span class="badge bg-secondary ms-1">연결됨</span>'}
                             ${identity.provider_email ? `<div class="text-muted small text-truncate">${window.escapeHtml(identity.provider_email)}</div>` : ''}
                         </div>
-                        ${identity.primary ? '' : `<button type="button" class="btn btn-sm btn-outline-danger" data-identity-unlink="${window.escapeHtml(identity.provider)}">연결 해제</button>`}
+                        ${action}
                     </div>
-                `);
+                `;
+                });
 
                 for (const provider of data.available || []) {
                     if (linked.has(provider.name)) continue;
@@ -165,6 +243,9 @@ import { renderUserAvatar } from '../utils/avatar';
                 container.querySelectorAll('[data-identity-unlink]').forEach(button => {
                     button.addEventListener('click', () => unlinkAuthIdentity(button.dataset.identityUnlink));
                 });
+                container.querySelectorAll('[data-identity-delete]').forEach(button => {
+                    button.addEventListener('click', () => deleteAccount(button.dataset.identityDelete));
+                });
             } catch (error) {
                 container.innerHTML = '<div class="text-danger small">로그인 계정 정보를 불러오지 못했습니다.</div>';
             }
@@ -175,7 +256,7 @@ import { renderUserAvatar } from '../utils/avatar';
             const result = await Swal.fire({
                 icon: 'question',
                 title: '로그인 계정 연결',
-                text: '새 공급자 계정으로 로그인해 현재 계정에 연결합니다.',
+                text: '새 공급자 계정으로 로그인해 현재 계정에 연결합니다. 이미 별도 계정이라면 두 계정 소유권을 다시 확인한 뒤 병합 여부를 묻습니다.',
                 showCancelButton: true,
                 confirmButtonText: '계속',
                 cancelButtonText: '취소',
@@ -195,21 +276,17 @@ import { renderUserAvatar } from '../utils/avatar';
             });
             if (!result.isConfirmed) return;
 
-            const res = await fetch(`/api/me/identities/${encodeURIComponent(provider)}`, { method: 'DELETE' });
-            const data = await res.json();
-            if (!res.ok) {
-                Swal.fire('연결 해제 실패', data.error || '다시 시도해주세요.', 'error');
-                return;
+            try {
+                const response = await fetch(`/api/me/identities/${encodeURIComponent(provider)}`, { method: 'DELETE' });
+                const data = await response.json();
+                if (!response.ok || !data.reauth_url) {
+                    Swal.fire('연동 해지 실패', data.error || '다시 시도해주세요.', 'error');
+                    return;
+                }
+                window.location.href = data.reauth_url;
+            } catch {
+                Swal.fire('연동 해지 실패', '네트워크 상태를 확인하고 다시 시도해주세요.', 'error');
             }
-            await loadAuthIdentities();
-            Swal.fire({
-                icon: 'success',
-                title: '연결을 해제했습니다.',
-                toast: true,
-                position: 'top-end',
-                showConfirmButton: false,
-                timer: 1500,
-            });
         }
 
         async function refreshProfilePicture() {
@@ -277,7 +354,7 @@ import { renderUserAvatar } from '../utils/avatar';
                 ${avatarHtml}
                 <div class="profile-info">
                     <h2>${window.escapeHtml(window.currentUser.name)} ${roleBadge}</h2>
-                    <div class="text-muted"><i class="mdi mdi-email"></i> ${window.escapeHtml(window.currentUser.email)}</div>
+                    ${window.currentUser.email ? `<div class="text-muted"><i class="mdi mdi-email"></i> ${window.escapeHtml(window.currentUser.email)}</div>` : ''}
                     <div class="text-muted"><i class="mdi mdi-calendar"></i> ${joinDate} 가입</div>
                 </div>
             `;
@@ -1193,7 +1270,8 @@ import { renderUserAvatar } from '../utils/avatar';
             }
         }
 
-        async function deleteAccount() {
+        async function deleteAccount(provider) {
+            if (!provider) return;
             const result = await Swal.fire({
                 title: '회원탈퇴',
                 html: '정말로 탈퇴하시겠습니까?<br><strong>탈퇴 후 동일 계정으로 재가입이 불가능합니다.</strong>',
@@ -1213,20 +1291,15 @@ import { renderUserAvatar } from '../utils/avatar';
 
             if (result.isConfirmed) {
                 try {
-                    const res = await fetch('/api/me/account', { method: 'DELETE' });
-                    if (!res.ok) {
-                        const data = await res.json();
-                        throw new Error(data.error || '탈퇴 처리에 실패했습니다.');
+                    const response = await fetch('/api/me/account', { method: 'DELETE' });
+                    const data = await response.json();
+                    if (!response.ok || !data.reauth_url) {
+                        Swal.fire('회원 탈퇴 실패', data.error || '다시 시도해주세요.', 'error');
+                        return;
                     }
-                    await Swal.fire({
-                        icon: 'success',
-                        title: '탈퇴가 완료되었습니다.',
-                        showConfirmButton: false,
-                        timer: 2000
-                    });
-                    window.location.href = '/';
-                } catch (err) {
-                    Swal.fire('오류', err.message, 'error');
+                    window.location.href = data.reauth_url;
+                } catch {
+                    Swal.fire('회원 탈퇴 실패', '네트워크 상태를 확인하고 다시 시도해주세요.', 'error');
                 }
             }
         }
@@ -1951,7 +2024,6 @@ window.loadMoreSentMessages = loadMoreSentMessages;
 window.loadMoreMyDiscussions = loadMoreMyDiscussions;
 window.revokeAllSessions = revokeAllSessions;
 window.revokeAllMcpClients = revokeAllMcpClients;
-window.deleteAccount = deleteAccount;
 window.refreshProfilePicture = refreshProfilePicture;
 window.deleteDirectMessage = deleteDirectMessage;
 window.revokeSession = revokeSession;

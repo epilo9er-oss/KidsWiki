@@ -64,25 +64,71 @@ import { createTocController } from '../article/toc';
       const urlParams = new URLSearchParams(window.location.search);
       const errorParam = urlParams.get('error');
       const infoParam = urlParams.get('info');
-      if (infoParam === 'account_link_required') {
-        const provider = urlParams.get('provider') || '';
-        const candidate = urlParams.get('candidate') || '';
-        const linkToken = urlParams.get('link_token') || '';
+      if (infoParam === 'oauth_account_choice') {
+        const candidate = urlParams.get('provider') || '';
+        const identityToken = urlParams.get('identity_token') || '';
+        const canSignup = urlParams.get('can_signup') === '1';
         const providerLabels = { google: 'Google', discord: 'Discord', naver: '네이버', kakao: '카카오' };
         window.history.replaceState({}, '', '/');
 
-        if (providerLabels[provider] && providerLabels[candidate] && /^[0-9a-f-]{36}$/i.test(linkToken)) {
-          const result = await Swal.fire({
+        if (providerLabels[candidate] && /^[0-9a-f-]{36}$/i.test(identityToken)) {
+          let existingProviders = [];
+          try {
+            const response = await fetch('/api/auth/providers');
+            const data = response.ok ? await response.json() : { providers: [] };
+            existingProviders = (data.providers || []).filter(provider => provider.name !== candidate);
+          } catch (_) { }
+
+          const choice = await Swal.fire({
             icon: 'question',
-            title: '기존 계정과 연결할까요?',
-            text: `같은 이메일의 기존 계정이 있습니다. ${providerLabels[provider]} 계정으로 다시 로그인하면 ${providerLabels[candidate]} 로그인을 안전하게 연결합니다.`,
+            title: `${providerLabels[candidate]} 로그인을 어떻게 사용할까요?`,
+            text: canSignup
+              ? '새 계정을 만들거나, 이미 사용 중인 계정으로 다시 인증해 로그인 수단만 연결할 수 있습니다.'
+              : '이 로그인 정보로는 새 계정을 만들 수 없습니다. 이미 사용 중인 계정으로 인증해 로그인 수단을 연결해주세요.',
+            showConfirmButton: canSignup,
+            showDenyButton: existingProviders.length > 0,
             showCancelButton: true,
-            confirmButtonText: `${providerLabels[provider]}로 확인`,
+            confirmButtonText: '새 계정으로 가입',
+            denyButtonText: '기존 계정에 연결',
             cancelButtonText: '취소',
           });
-          if (result.isConfirmed) {
-            window.location.href = `/auth/${provider}?link_token=${encodeURIComponent(linkToken)}`;
+
+          if (choice.isConfirmed) {
+            try {
+              const response = await fetch('/auth/identity-choice/new', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: identityToken }),
+              });
+              const data = await response.json();
+              window.location.href = data.redirect || '/?error=invalid_link_request';
+            } catch (_) {
+              await Swal.fire('가입 처리 실패', '잠시 후 다시 시도해주세요.', 'error');
+            }
             return;
+          }
+
+          if (choice.isDenied) {
+            let provider = existingProviders[0]?.name;
+            if (existingProviders.length > 1) {
+              const inputOptions = Object.fromEntries(existingProviders.map(item => [item.name, item.label]));
+              const selected = await Swal.fire({
+                title: '기존 계정의 로그인 수단',
+                input: 'select',
+                inputOptions,
+                inputPlaceholder: '로그인 수단 선택',
+                showCancelButton: true,
+                confirmButtonText: '인증하기',
+                cancelButtonText: '취소',
+                inputValidator: value => value ? undefined : '로그인 수단을 선택해주세요.',
+              });
+              if (!selected.isConfirmed) return;
+              provider = selected.value;
+            }
+            if (provider) {
+              window.location.href = `/auth/${encodeURIComponent(provider)}?identity_token=${encodeURIComponent(identityToken)}`;
+              return;
+            }
           }
         }
       }
@@ -91,10 +137,10 @@ import { createTocController } from '../article/toc';
           'deleted_account': { icon: 'error', title: '접근 불가', text: '탈퇴한 계정입니다.' },
           'signup_pending': { icon: 'info', title: '가입 대기 중', text: '가입 신청이 대기 중입니다. 관리자 승인을 기다려주세요.' },
           'signup_blocked': { icon: 'error', title: '가입 차단', text: '가입이 차단된 계정입니다. 관리자에게 문의하세요.' },
-          'email_domain_not_allowed': { icon: 'error', title: '가입 불가', text: '해당 이메일 도메인은 가입이 허용되지 않습니다.' },
+          'email_domain_not_allowed': { icon: 'error', title: '가입 불가', text: '이메일이 없거나 허용된 이메일 도메인이 아닙니다.' },
           'signup_submitted': { icon: 'success', title: '가입 신청 완료', text: '가입 신청이 접수되었습니다. 관리자 승인 후 이용 가능합니다.' },
           'account_linked': { icon: 'success', title: '계정 연결 완료', text: '새 로그인 수단이 기존 계정에 연결되었습니다.' },
-          'email_required': { icon: 'error', title: '이메일 동의 필요', text: '신규 가입에는 공급자에서 확인된 이메일 제공 동의가 필요합니다.' },
+          'account_deleted': { icon: 'success', title: '회원 탈퇴 완료', text: '계정과 로그인 연결을 안전하게 해지했습니다.' },
           'email_already_registered': { icon: 'error', title: '계정 확인 필요', text: '같은 이메일 또는 공급자의 계정이 이미 등록되어 있습니다.' },
           'invalid_link_request': { icon: 'error', title: '연결 요청 오류', text: '계정 연결 요청이 올바르지 않습니다. 다시 시도해주세요.' },
           'link_request_expired': { icon: 'error', title: '연결 요청 만료', text: '계정 연결 요청이 만료되었습니다. 다시 로그인해주세요.' },

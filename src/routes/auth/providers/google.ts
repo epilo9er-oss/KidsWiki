@@ -19,7 +19,8 @@ export const googleProvider: OAuthProvider = {
             redirect_uri: c.env.GOOGLE_REDIRECT_URI,
             response_type: 'code',
             scope: 'openid email profile',
-            prompt: stateData?.intent === 'link' || stateData?.intent === 'confirm_link'
+            prompt: stateData?.intent === 'link' || stateData?.intent === 'attach_pending' || stateData?.intent === 'confirm_merge'
+                || stateData?.intent === 'unlink' || stateData?.intent === 'delete_account'
                 ? 'select_account'
                 : 'consent',
             state,
@@ -88,6 +89,17 @@ export const googleProvider: OAuthProvider = {
                 picture: userInfo.picture,
             },
             state: stateData,
+            accessToken: tokenData.access_token,
         };
+    },
+
+    async disconnect(_c: Context<Env>, accessToken: string): Promise<boolean> {
+        const response = await fetch('https://oauth2.googleapis.com/revoke', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ token: accessToken }),
+        });
+        if (!response.ok) console.error('Google OAuth revoke failed:', response.status);
+        return response.ok;
     },
 };

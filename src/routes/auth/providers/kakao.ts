@@ -19,7 +19,8 @@ export const kakaoProvider: OAuthProvider = {
             redirect_uri: c.env.KAKAO_REDIRECT_URI,
             state,
         });
-        if (stateData?.intent === 'link' || stateData?.intent === 'confirm_link') {
+        if (stateData?.intent === 'link' || stateData?.intent === 'attach_pending' || stateData?.intent === 'confirm_merge'
+            || stateData?.intent === 'unlink' || stateData?.intent === 'delete_account') {
             params.set('prompt', 'select_account');
         }
         return c.redirect(`https://kauth.kakao.com/oauth/authorize?${params.toString()}`);
@@ -87,6 +88,19 @@ export const kakaoProvider: OAuthProvider = {
                 picture: account?.profile?.profile_image_url || data.properties?.profile_image || undefined,
             },
             state: stateData,
+            accessToken: token.access_token,
         };
+    },
+
+    async disconnect(_c: Context<Env>, accessToken: string): Promise<boolean> {
+        const response = await fetch('https://kapi.kakao.com/v1/user/unlink', {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+        });
+        if (!response.ok) console.error('Kakao unlink failed:', response.status);
+        return response.ok;
     },
 };

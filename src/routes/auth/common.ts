@@ -3,26 +3,29 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { Env } from '../../types';
 import type { UserId } from '../../shared/userId';
 import type { OAuthProfile, OAuthStateData } from './providers/base';
-import { isEmailDomainAllowed } from '../../utils/auth';
+import { isEmailDomainAllowed, isSuperAdmin } from '../../utils/auth';
 import { dispatchDiscord } from '../../utils/webhook/discord';
 import { userJoined } from '../../utils/webhook/events/signup';
 import {
+    canOfferOAuthSignup,
     createUserWithIdentity,
-    decideUnknownIdentity,
     findUserByIdentity,
-    findUsersByEmail,
-    hasProviderIdentity,
     linkIdentity,
-    parsePendingIdentityLink,
-    type PendingIdentityLink,
+    parsePendingOAuthIdentity,
+    type PendingOAuthIdentity,
     updateIdentityEmail,
 } from './identities';
+import {
+    mergeAccounts,
+    parsePendingAccountMerge,
+    type PendingAccountMerge,
+} from './accountMerge';
 
 /**
  * OAuth 로그인 공통 처리:
  *  1. provider + uid로 기존 유저 조회
- *  2. 없으면 이메일 중복 체크 → 신규 유저 생성 (또는 승인제 처리)
- *  3. 세션 생성 후 쿠키 발급
+ *  2. 없으면 신규 가입 또는 기존 계정 연결을 사용자가 명시적으로 선택
+ *  3. 기존 유저면 세션 생성 후 쿠키 발급
  */
 /**
  * 세션 수명(초).
@@ -32,12 +35,10 @@ import {
 export const SESSION_TTL_REMEMBER = 60 * 60 * 24 * 365; // 1년
 export const SESSION_TTL_DEFAULT = 60 * 60 * 6; // 6시간
 
-const PENDING_IDENTITY_LINK_TTL = 600;
+const PENDING_AUTH_TTL = 600;
 
 export async function handleOAuthLogin(c: Context<Env>, profile: OAuthProfile, redirectUrl?: string, remember = false): Promise<Response> {
     const db = c.env.DB;
-    let isNewUser = false;
-    let userId: UserId | null = null;
 
     // OAuth 공급자의 불변 식별자로 로그인 계정을 찾는다. 이메일은 절대 로그인 키로 쓰지 않는다.
     const existingUser = await findUserByIdentity(db, profile.provider, profile.uid);
@@ -46,142 +47,129 @@ export async function handleOAuthLogin(c: Context<Env>, profile: OAuthProfile, r
         return c.redirect('/?error=deleted_account');
     }
 
-    if (existingUser) {
-        userId = existingUser.id;
-        await updateIdentityEmail(db, profile.provider, profile.uid, profile.email);
-
-        // 대표 프로필 사진은 기본 로그인 수단으로 로그인했을 때만 갱신한다.
-        if (existingUser.provider === profile.provider && existingUser.uid === profile.uid) {
-            await db
-                .prepare('UPDATE users SET picture = CASE WHEN picture_private = 1 THEN picture ELSE ? END WHERE id = ?')
-                .bind(profile.picture || null, existingUser.id)
-                .run();
-        }
-    } else {
-        const email = profile.email?.trim();
-        if (!email) {
-            return c.redirect(`/?error=email_required&provider=${encodeURIComponent(profile.provider)}`);
-        }
-
-        // 같은 이메일은 연결 후보일 뿐이다. 기존 기본 공급자로 다시 인증하기 전에는 병합하지 않는다.
-        const emailUsers = await findUsersByEmail(db, email);
-        const targetHasProvider = emailUsers.length === 1
-            ? await hasProviderIdentity(db, emailUsers[0].id, profile.provider)
-            : false;
-        const decision = decideUnknownIdentity(emailUsers.length, targetHasProvider);
-        if (decision === 'require_reauthentication') {
-            const target = emailUsers[0];
-            const token = crypto.randomUUID();
-            const browserNonce = crypto.randomUUID();
-            const pending: PendingIdentityLink = {
-                targetUserId: target.id,
-                candidate: { provider: profile.provider, uid: profile.uid, email },
-                remember,
-                browserNonce,
-            };
-            await c.env.KV.put(`pending_identity_link:${token}`, JSON.stringify(pending), {
-                expirationTtl: PENDING_IDENTITY_LINK_TTL,
-            });
-            setCookie(c, 'oauth_link_nonce', browserNonce, {
-                httpOnly: true,
-                secure: true,
-                sameSite: 'Lax',
-                path: '/auth',
-                maxAge: PENDING_IDENTITY_LINK_TTL,
-            });
-            const query = new URLSearchParams({
-                info: 'account_link_required',
-                provider: target.provider,
-                candidate: profile.provider,
-                link_token: token,
-            });
-            return c.redirect(`/?${query.toString()}`);
-        }
-        if (decision === 'conflict') {
-            const provider = emailUsers.length === 1 ? `&provider=${encodeURIComponent(emailUsers[0].provider)}` : '';
-            return c.redirect(`/?error=email_already_registered${provider}`);
-        }
-
-        // 이메일 도메인 필터링
-        if (!isEmailDomainAllowed(email, c.env.EMAIL_RESTRICTION, c.env.EMAIL_LIST)) {
-            return c.redirect('/?error=email_domain_not_allowed');
-        }
-
-        const settingsRow = await db
-            .prepare('SELECT signup_policy FROM settings WHERE id = 1')
-            .first<{ signup_policy: string }>();
-        const signupPolicy = settingsRow?.signup_policy || 'open';
-
-        // 차단: 신규 유저 가입 완전 차단
-        if (signupPolicy === 'blocked') {
-            return c.redirect('/?error=signup_blocked');
-        }
-
-        // 승인제: 신규 유저는 바로 가입하지 않고 가입 신청 절차를 거침
-        if (signupPolicy === 'approval') {
-            // 기존 가입 신청 확인
-            const existingRequest = await db
-                .prepare('SELECT id, status FROM signup_requests WHERE provider = ? AND uid = ? ORDER BY created_at DESC LIMIT 1')
-                .bind(profile.provider, profile.uid)
-                .first<{ id: number; status: string }>();
-
-            if (existingRequest) {
-                if (existingRequest.status === 'pending') {
-                    return c.redirect('/?error=signup_pending');
-                }
-                if (existingRequest.status === 'blocked') {
-                    return c.redirect('/?error=signup_blocked');
-                }
-                // rejected: 재신청 가능 → 아래로 진행
-            }
-
-            // 임시 토큰 발급하여 KV에 저장 (10분 TTL)
-            const signupToken = crypto.randomUUID();
-            await c.env.KV.put(`signup_token:${signupToken}`, JSON.stringify({
-                provider: profile.provider,
-                uid: profile.uid,
-                email,
-                name: profile.name,
-                picture: profile.picture,
-            }), { expirationTtl: 600 });
-
-            return c.redirect(`/setup-profile?mode=approval&token=${signupToken}`);
-        }
-
-        // 모두 허용: 바로 유저 생성
-        const finalName = await resolveUniqueName(db, profile.name);
-        userId = await createUserWithIdentity(db, {
-            provider: profile.provider,
-            uid: profile.uid,
-            email,
-            name: finalName,
-            picture: profile.picture,
+    if (!existingUser) {
+        const token = crypto.randomUUID();
+        const browserNonce = crypto.randomUUID();
+        const normalizedProfile = { ...profile, email: profile.email?.trim() || undefined };
+        const pending: PendingOAuthIdentity = { profile: normalizedProfile, remember, redirectUrl, browserNonce };
+        await c.env.KV.put(`pending_oauth_identity:${token}`, JSON.stringify(pending), { expirationTtl: PENDING_AUTH_TTL });
+        setCookie(c, 'oauth_identity_nonce', browserNonce, {
+            httpOnly: true,
+            secure: true,
+            sameSite: 'Lax',
+            path: '/auth',
+            maxAge: PENDING_AUTH_TTL,
         });
-        isNewUser = true;
 
-        // open 정책 신규 가입 → community 채널 환영 알림
-        if (userId) {
-            dispatchDiscord(c.env, c.executionCtx, userJoined({
-                user: { id: userId, name: finalName, picture: profile.picture || null },
-                env: c.env,
-            }));
-        }
+        const emailInUse = normalizedProfile.email
+            ? !!await db.prepare("SELECT 1 FROM users WHERE role != 'deleted' AND LOWER(email) = LOWER(?) LIMIT 1")
+                .bind(normalizedProfile.email)
+                .first()
+            : false;
+        const query = new URLSearchParams({
+            info: 'oauth_account_choice',
+            provider: profile.provider,
+            identity_token: token,
+            can_signup: canOfferOAuthSignup(normalizedProfile.email, emailInUse) ? '1' : '0',
+        });
+        return c.redirect(`/?${query.toString()}`);
     }
 
-    if (!userId) {
-        return c.redirect('/error?reason=' + encodeURIComponent('계정 생성에 실패했습니다. 다시 시도해주세요.'));
+    await updateIdentityEmail(db, profile.provider, profile.uid, profile.email);
+
+    // 대표 프로필 사진은 기본 로그인 수단으로 로그인했을 때만 갱신한다.
+    if (existingUser.provider === profile.provider && existingUser.uid === profile.uid) {
+        await db
+            .prepare('UPDATE users SET picture = CASE WHEN picture_private = 1 THEN picture ELSE ? END WHERE id = ?')
+            .bind(profile.picture || null, existingUser.id)
+            .run();
     }
 
-    await createSession(c, userId, remember);
-
-    if (isNewUser) {
-        return c.redirect('/setup-profile');
-    }
-
+    await createSession(c, existingUser.id, remember);
     const safeRedirect = (redirectUrl && redirectUrl.startsWith('/') && !redirectUrl.startsWith('//') && !/[\x00-\x1f\x7f]/.test(redirectUrl))
         ? redirectUrl
         : '/';
     return c.redirect(safeRedirect);
+}
+
+export async function readPendingOAuthIdentity(
+    c: Context<Env>,
+    token: string,
+): Promise<PendingOAuthIdentity | null> {
+    if (!/^[0-9a-f-]{36}$/i.test(token)) return null;
+    const key = `pending_oauth_identity:${token}`;
+    const raw = await c.env.KV.get(key);
+    if (!raw) return null;
+    const pending = parsePendingOAuthIdentity(raw);
+    if (!pending) {
+        await c.env.KV.delete(key);
+        return null;
+    }
+    return getCookie(c, 'oauth_identity_nonce') === pending.browserNonce ? pending : null;
+}
+
+export async function handleNewOAuthAccountChoice(c: Context<Env>, token: string): Promise<Response> {
+    const pending = await readPendingOAuthIdentity(c, token);
+    if (!pending) return c.json({ redirect: '/?error=link_request_expired' }, 400);
+
+    const profile = pending.profile;
+    const email = profile.email?.trim() || null;
+    if (await findUserByIdentity(c.env.DB, profile.provider, profile.uid)) {
+        return c.json({ redirect: '/?error=identity_in_use' }, 409);
+    }
+    if (email && await c.env.DB.prepare("SELECT 1 FROM users WHERE role != 'deleted' AND LOWER(email) = LOWER(?) LIMIT 1")
+        .bind(email)
+        .first()) {
+        return c.json({ redirect: '/?error=email_already_registered' }, 409);
+    }
+    const emailRestriction = c.env.EMAIL_RESTRICTION?.trim().toLowerCase();
+    if ((!email && emailRestriction === 'whitelist') ||
+        (email && !isEmailDomainAllowed(email, emailRestriction, c.env.EMAIL_LIST))) {
+        return c.json({ redirect: '/?error=email_domain_not_allowed' }, 403);
+    }
+
+    const settingsRow = await c.env.DB.prepare('SELECT signup_policy FROM settings WHERE id = 1')
+        .first<{ signup_policy: string }>();
+    const signupPolicy = settingsRow?.signup_policy || 'open';
+    if (signupPolicy === 'blocked') return c.json({ redirect: '/?error=signup_blocked' }, 403);
+
+    if (signupPolicy === 'approval') {
+        const existingRequest = await c.env.DB
+            .prepare('SELECT status FROM signup_requests WHERE provider = ? AND uid = ? ORDER BY created_at DESC LIMIT 1')
+            .bind(profile.provider, profile.uid)
+            .first<{ status: string }>();
+        if (existingRequest?.status === 'pending') return c.json({ redirect: '/?error=signup_pending' }, 409);
+        if (existingRequest?.status === 'blocked') return c.json({ redirect: '/?error=signup_blocked' }, 403);
+
+        const signupToken = crypto.randomUUID();
+        await c.env.KV.put(`signup_token:${signupToken}`, JSON.stringify({
+            provider: profile.provider,
+            uid: profile.uid,
+            email,
+            name: profile.name,
+            picture: profile.picture,
+        }), { expirationTtl: PENDING_AUTH_TTL });
+        await c.env.KV.delete(`pending_oauth_identity:${token}`);
+        deleteCookie(c, 'oauth_identity_nonce', { path: '/auth', secure: true, sameSite: 'Lax' });
+        return c.json({ redirect: `/setup-profile?mode=approval&token=${signupToken}` });
+    }
+
+    const finalName = await resolveUniqueName(c.env.DB, profile.name);
+    const userId = await createUserWithIdentity(c.env.DB, {
+        provider: profile.provider,
+        uid: profile.uid,
+        email,
+        name: finalName,
+        picture: profile.picture,
+    });
+    await createSession(c, userId, pending.remember);
+    await c.env.KV.delete(`pending_oauth_identity:${token}`);
+    deleteCookie(c, 'oauth_identity_nonce', { path: '/auth', secure: true, sameSite: 'Lax' });
+    dispatchDiscord(c.env, c.executionCtx, userJoined({
+        user: { id: userId, name: finalName, picture: profile.picture || null },
+        env: c.env,
+    }));
+    return c.json({ redirect: '/setup-profile' });
 }
 
 export async function handleOAuthLink(
@@ -194,59 +182,123 @@ export async function handleOAuthLink(
         return c.redirect('/mypage?identity_error=session_mismatch');
     }
 
-    const result = await linkIdentity(c.env.DB, currentUser.id, profile);
+    const owner = await findUserByIdentity(c.env.DB, profile.provider, profile.uid);
+    if (owner && owner.id !== currentUser.id) {
+        const token = crypto.randomUUID();
+        const browserNonce = crypto.randomUUID();
+        const pending: PendingAccountMerge = {
+            survivorUserId: currentUser.id,
+            absorbedUserId: owner.id,
+            absorbedIdentity: { provider: profile.provider, uid: profile.uid },
+            browserNonce,
+        };
+        await c.env.KV.put(`pending_account_merge:${token}`, JSON.stringify(pending), { expirationTtl: PENDING_AUTH_TTL });
+        setCookie(c, 'oauth_merge_nonce', browserNonce, {
+            httpOnly: true,
+            secure: true,
+            sameSite: 'Lax',
+            path: '/auth',
+            maxAge: PENDING_AUTH_TTL,
+        });
+        const query = new URLSearchParams({
+            identity_merge: token,
+            merge_primary: currentUser.provider,
+            merge_candidate: profile.provider,
+        });
+        return c.redirect(`/mypage?${query.toString()}`);
+    }
+
+    const result = owner ? 'already_linked' : await linkIdentity(c.env.DB, currentUser.id, profile);
     if (result === 'linked' || result === 'already_linked') {
         return c.redirect(`/mypage?identity_linked=${encodeURIComponent(profile.provider)}`);
     }
     return c.redirect(`/mypage?identity_error=${encodeURIComponent(result)}`);
 }
 
-export async function handlePendingIdentityLink(
+export async function handlePendingIdentityAttach(
     c: Context<Env>,
     profile: OAuthProfile,
     state: OAuthStateData,
 ): Promise<Response> {
-    const token = state.pendingLinkToken;
+    const token = state.pendingIdentityToken;
     if (!token) return c.redirect('/?error=invalid_link_request');
+    const pending = await readPendingOAuthIdentity(c, token);
+    if (!pending) return c.redirect('/?error=link_request_expired');
 
-    const key = `pending_identity_link:${token}`;
-    const raw = await c.env.KV.get(key);
-    if (!raw) return c.redirect('/?error=link_request_expired');
-
-    const pending = parsePendingIdentityLink(raw);
-    if (!pending) {
-        await c.env.KV.delete(key);
-        return c.redirect('/?error=invalid_link_request');
-    }
-
-    if (!pending.browserNonce || getCookie(c, 'oauth_link_nonce') !== pending.browserNonce) {
-        return c.redirect('/?error=invalid_link_request');
-    }
-
-    const target = await c.env.DB.prepare('SELECT id, provider, uid, role FROM users WHERE id = ?')
-        .bind(pending.targetUserId)
-        .first<{ id: UserId; provider: string; uid: string; role: string }>();
-
-    // 같은 이메일이 아니라 기존 계정의 기본 OAuth identity를 다시 증명했는지 검증한다.
-    if (!target || target.role === 'deleted' || profile.provider !== target.provider || profile.uid !== target.uid) {
+    const target = await findUserByIdentity(c.env.DB, profile.provider, profile.uid);
+    if (!target || target.role === 'deleted') {
         return c.redirect('/?error=account_link_reauth_failed');
     }
 
-    const result = await linkIdentity(c.env.DB, target.id, {
-        provider: pending.candidate.provider,
-        uid: pending.candidate.uid,
-        email: pending.candidate.email,
-        name: '',
-    });
-    await c.env.KV.delete(key);
+    await updateIdentityEmail(c.env.DB, profile.provider, profile.uid, profile.email);
+    const result = await linkIdentity(c.env.DB, target.id, pending.profile);
+    await c.env.KV.delete(`pending_oauth_identity:${token}`);
 
     if (result !== 'linked' && result !== 'already_linked') {
         return c.redirect(`/?error=${encodeURIComponent(result)}`);
     }
 
-    await createSession(c, target.id, state.remember ?? false);
-    deleteCookie(c, 'oauth_link_nonce', { path: '/auth', secure: true, sameSite: 'Lax' });
-    return c.redirect(`/?info=account_linked&provider=${encodeURIComponent(pending.candidate.provider)}`);
+    await createSession(c, target.id, pending.remember);
+    deleteCookie(c, 'oauth_identity_nonce', { path: '/auth', secure: true, sameSite: 'Lax' });
+    return c.redirect(`/?info=account_linked&provider=${encodeURIComponent(pending.profile.provider)}`);
+}
+
+export async function readPendingAccountMerge(c: Context<Env>, token: string): Promise<PendingAccountMerge | null> {
+    if (!/^[0-9a-f-]{36}$/i.test(token)) return null;
+    const key = `pending_account_merge:${token}`;
+    const raw = await c.env.KV.get(key);
+    if (!raw) return null;
+    const pending = parsePendingAccountMerge(raw);
+    if (!pending) {
+        await c.env.KV.delete(key);
+        return null;
+    }
+    return getCookie(c, 'oauth_merge_nonce') === pending.browserNonce ? pending : null;
+}
+
+export async function handlePendingAccountMerge(
+    c: Context<Env>,
+    profile: OAuthProfile,
+    state: OAuthStateData,
+): Promise<Response> {
+    const token = state.pendingMergeToken;
+    if (!token) return c.redirect('/mypage?identity_error=invalid_merge_request');
+    const pending = await readPendingAccountMerge(c, token);
+    const currentUser = c.get('user');
+    if (!pending || !currentUser || currentUser.id !== pending.survivorUserId) {
+        return c.redirect('/mypage?identity_error=session_mismatch');
+    }
+
+    const survivor = await c.env.DB.prepare('SELECT provider, uid, email FROM users WHERE id = ?')
+        .bind(pending.survivorUserId)
+        .first<{ provider: string; uid: string; email: string | null }>();
+    const absorbed = await c.env.DB.prepare('SELECT email FROM users WHERE id = ?')
+        .bind(pending.absorbedUserId)
+        .first<{ email: string | null }>();
+    if (!survivor || !absorbed || profile.provider !== survivor.provider || profile.uid !== survivor.uid) {
+        return c.redirect('/mypage?identity_error=merge_reauth_failed');
+    }
+    if (currentUser.role !== 'user' || isSuperAdmin(survivor.email, c.env) || isSuperAdmin(absorbed.email, c.env)) {
+        return c.redirect('/mypage?identity_error=privileged_account');
+    }
+
+    const identityOwner = await findUserByIdentity(
+        c.env.DB,
+        pending.absorbedIdentity.provider,
+        pending.absorbedIdentity.uid,
+    );
+    if (!identityOwner || identityOwner.id !== pending.absorbedUserId) {
+        return c.redirect('/mypage?identity_error=merge_identity_changed');
+    }
+
+    const result = await mergeAccounts(c.env.DB, pending.survivorUserId, pending.absorbedUserId);
+    await c.env.KV.delete(`pending_account_merge:${token}`);
+    deleteCookie(c, 'oauth_merge_nonce', { path: '/auth', secure: true, sameSite: 'Lax' });
+    if (result.status !== 'merged') {
+        return c.redirect(`/mypage?identity_error=${encodeURIComponent(result.status)}`);
+    }
+    await Promise.all(result.revokedSessionIds.map(id => c.env.KV.delete(`session:${id}`)));
+    return c.redirect(`/mypage?identity_merged=${encodeURIComponent(pending.absorbedIdentity.provider)}`);
 }
 
 /**

@@ -1,5 +1,5 @@
 import type { OAuthProfile } from './providers/base';
-import { createUserId, isUserId, type UserId } from '../../shared/userId.ts';
+import { createUserId, type UserId } from '../../shared/userId.ts';
 
 export interface IdentityUser {
     id: UserId;
@@ -15,6 +15,33 @@ export interface UserIdentity {
     primary: boolean;
 }
 
+export interface UserIdentityRecord extends UserIdentity {
+    uid: string;
+}
+
+export type IdentityUnlinkDecision = 'allowed' | 'not_found' | 'last_identity' | 'primary_super_admin';
+export type AccountDeletionDecision = 'allowed' | 'links_remaining' | 'last_super_admin';
+
+export function getIdentityUnlinkDecision(
+    identities: UserIdentity[],
+    provider: string,
+    superAdmin: boolean,
+): IdentityUnlinkDecision {
+    const identity = identities.find(item => item.provider === provider);
+    if (!identity) return 'not_found';
+    if (identities.length <= 1) return 'last_identity';
+    if (superAdmin && identity.primary) return 'primary_super_admin';
+    return 'allowed';
+}
+
+export function getAccountDeletionDecision(
+    identityCount: number,
+    lastActiveSuperAdmin: boolean,
+): AccountDeletionDecision {
+    if (identityCount !== 1) return 'links_remaining';
+    return lastActiveSuperAdmin ? 'last_super_admin' : 'allowed';
+}
+
 export type LinkIdentityResult =
     | 'linked'
     | 'already_linked'
@@ -22,36 +49,35 @@ export type LinkIdentityResult =
     | 'provider_already_linked'
     | 'user_not_found';
 
-export interface PendingIdentityLink {
-    targetUserId: UserId;
-    candidate: Pick<OAuthProfile, 'provider' | 'uid' | 'email'>;
+/** 이메일이 없거나, 제공된 이메일을 다른 계정이 사용하지 않을 때 신규 가입을 허용한다. */
+export function canOfferOAuthSignup(email: string | undefined, emailInUse: boolean): boolean {
+    return !email?.trim() || !emailInUse;
+}
+
+export interface PendingOAuthIdentity {
+    profile: OAuthProfile;
     remember: boolean;
+    redirectUrl?: string;
     browserNonce: string;
 }
 
-export function parsePendingIdentityLink(raw: string): PendingIdentityLink | null {
+export function parsePendingOAuthIdentity(raw: string): PendingOAuthIdentity | null {
     try {
-        const value = JSON.parse(raw) as Partial<PendingIdentityLink>;
-        const candidate = value.candidate;
-        if (!isUserId(value.targetUserId)) return null;
-        if (!candidate || typeof candidate.provider !== 'string' || !candidate.provider) return null;
-        if (typeof candidate.uid !== 'string' || !candidate.uid) return null;
-        if (typeof candidate.email !== 'string' || !candidate.email) return null;
+        const value = JSON.parse(raw) as Partial<PendingOAuthIdentity>;
+        const profile = value.profile;
+        if (!profile || typeof profile.provider !== 'string' || !profile.provider) return null;
+        if (typeof profile.uid !== 'string' || !profile.uid) return null;
+        if (profile.email !== undefined && (typeof profile.email !== 'string' || !profile.email.trim())) return null;
+        if (typeof profile.name !== 'string') return null;
+        if (profile.picture !== undefined && typeof profile.picture !== 'string') return null;
         if (typeof value.remember !== 'boolean') return null;
+        if (value.redirectUrl !== undefined
+            && (!value.redirectUrl.startsWith('/') || value.redirectUrl.startsWith('//') || /[\x00-\x1f\x7f]/.test(value.redirectUrl))) return null;
         if (typeof value.browserNonce !== 'string' || !/^[0-9a-f-]{36}$/i.test(value.browserNonce)) return null;
-        return value as PendingIdentityLink;
+        return value as PendingOAuthIdentity;
     } catch {
         return null;
     }
-}
-
-export function decideUnknownIdentity(
-    emailMatchCount: number,
-    targetAlreadyHasProvider: boolean,
-): 'create_user' | 'require_reauthentication' | 'conflict' {
-    if (emailMatchCount === 0) return 'create_user';
-    if (emailMatchCount === 1 && !targetAlreadyHasProvider) return 'require_reauthentication';
-    return 'conflict';
 }
 
 let schemaReady: Promise<void> | null = null;
@@ -93,16 +119,6 @@ export async function findUserByIdentity(
         JOIN users u ON u.id = i.user_id
         WHERE i.provider = ? AND i.provider_uid = ?
     `).bind(provider, uid).first<IdentityUser>();
-}
-
-export async function findUsersByEmail(db: D1Database, email: string): Promise<IdentityUser[]> {
-    const result = await db.prepare(`
-        SELECT id, role, provider, uid, picture_private
-        FROM users
-        WHERE role != 'deleted' AND LOWER(email) = LOWER(?)
-        LIMIT 2
-    `).bind(email.trim()).all<IdentityUser>();
-    return result.results ?? [];
 }
 
 export async function hasProviderIdentity(db: D1Database, userId: UserId, provider: string): Promise<boolean> {
@@ -175,25 +191,101 @@ export async function listUserIdentities(db: D1Database, userId: UserId): Promis
     }));
 }
 
-export async function unlinkSecondaryIdentity(
+export async function findUserIdentity(
     db: D1Database,
     userId: UserId,
     provider: string,
-): Promise<'unlinked' | 'primary' | 'not_found'> {
+): Promise<UserIdentityRecord | null> {
     await ensureUserIdentities(db);
-    const user = await db.prepare('SELECT provider FROM users WHERE id = ?').bind(userId).first<{ provider: string }>();
-    if (!user) return 'not_found';
-    if (user.provider === provider) return 'primary';
-    const result = await db.prepare('DELETE FROM user_identities WHERE user_id = ? AND provider = ?')
-        .bind(userId, provider)
-        .run();
-    return Number(result.meta.changes ?? 0) > 0 ? 'unlinked' : 'not_found';
+    return db.prepare(`
+        SELECT i.provider, i.provider_uid AS uid, i.provider_email,
+               CASE WHEN i.provider = u.provider AND i.provider_uid = u.uid THEN 1 ELSE 0 END AS is_primary
+        FROM user_identities i
+        JOIN users u ON u.id = i.user_id
+        WHERE i.user_id = ? AND i.provider = ?
+    `).bind(userId, provider).first<{
+        provider: string;
+        uid: string;
+        provider_email: string | null;
+        is_primary: number;
+    }>().then(row => row ? {
+        provider: row.provider,
+        uid: row.uid,
+        provider_email: row.provider_email,
+        primary: !!row.is_primary,
+    } : null);
+}
+
+export type UnlinkIdentityResult = Exclude<IdentityUnlinkDecision, 'allowed'> | 'unlinked';
+
+export async function unlinkIdentity(
+    db: D1Database,
+    userId: UserId,
+    provider: string,
+    superAdmin: boolean,
+): Promise<UnlinkIdentityResult> {
+    const identities = await listUserIdentities(db, userId);
+    const decision = getIdentityUnlinkDecision(identities, provider, superAdmin);
+    if (decision !== 'allowed') return decision;
+
+    const target = await findUserIdentity(db, userId, provider);
+    if (!target) return 'not_found';
+
+    if (!target.primary) {
+        const result = await db.prepare(`
+            DELETE FROM user_identities
+            WHERE user_id = ? AND provider = ?
+              AND (SELECT COUNT(*) FROM user_identities WHERE user_id = ?) > 1
+        `).bind(userId, provider, userId).run();
+        if (Number(result.meta.changes ?? 0) > 0) return 'unlinked';
+    } else {
+        const next = identities.find(identity => !identity.primary);
+        const nextRecord = next && await findUserIdentity(db, userId, next.provider);
+        if (!nextRecord) return 'last_identity';
+
+        const results = await db.batch([
+            // 병합되어 삭제된 예전 사용자 row가 동일 provider/uid를 점유한 경우 해제한다.
+            db.prepare(`UPDATE users SET provider = 'retired', uid = id
+                        WHERE id != ? AND role = 'deleted' AND provider = ? AND uid = ?`)
+                .bind(userId, nextRecord.provider, nextRecord.uid),
+            db.prepare(`UPDATE users SET provider = ?, uid = ?
+                        WHERE id = ? AND provider = ? AND uid = ?
+                          AND (SELECT COUNT(*) FROM user_identities WHERE user_id = ?) > 1
+                          AND EXISTS (
+                              SELECT 1 FROM user_identities
+                              WHERE user_id = ? AND provider = ? AND provider_uid = ?
+                          )`)
+                .bind(
+                    nextRecord.provider,
+                    nextRecord.uid,
+                    userId,
+                    target.provider,
+                    target.uid,
+                    userId,
+                    userId,
+                    nextRecord.provider,
+                    nextRecord.uid,
+                ),
+            db.prepare(`DELETE FROM user_identities
+                        WHERE user_id = ? AND provider = ?
+                          AND EXISTS (
+                              SELECT 1 FROM users
+                              WHERE id = ? AND provider = ? AND uid = ?
+                          )`)
+                .bind(userId, provider, userId, nextRecord.provider, nextRecord.uid),
+        ]);
+        if (Number(results[2]?.meta.changes ?? 0) > 0) return 'unlinked';
+    }
+
+    const after = getIdentityUnlinkDecision(await listUserIdentities(db, userId), provider, superAdmin);
+    if (after !== 'allowed') return after;
+    throw new Error('OAuth identity unlink did not change the database');
 }
 
 export async function createUserWithIdentity(db: D1Database, input: {
     provider: string;
     uid: string;
-    email: string;
+    email?: string | null;
     name: string;
     picture?: string | null;
     picturePrivate?: boolean;
@@ -204,11 +296,11 @@ export async function createUserWithIdentity(db: D1Database, input: {
         db.prepare(`
             INSERT INTO users (id, provider, uid, email, name, picture, picture_private)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).bind(userId, input.provider, input.uid, input.email, input.name, input.picture ?? null, input.picturePrivate ? 1 : 0),
+        `).bind(userId, input.provider, input.uid, input.email ?? null, input.name, input.picture ?? null, input.picturePrivate ? 1 : 0),
         db.prepare(`
             INSERT INTO user_identities (user_id, provider, provider_uid, provider_email)
             VALUES (?, ?, ?, ?)
-        `).bind(userId, input.provider, input.uid, input.email),
+        `).bind(userId, input.provider, input.uid, input.email ?? null),
     ]);
     return userId;
 }

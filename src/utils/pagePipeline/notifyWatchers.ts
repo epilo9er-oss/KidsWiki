@@ -98,7 +98,7 @@ export async function collectPageEditWatchers(
                  WHERE u.id IN (${placeholders})`,
             )
             .bind(...ids)
-            .all<{ id: string; email: string; role: string }>();
+            .all<{ id: string; email: string | null; role: string }>();
         // super_admin 이메일 보정 (DB role 값과 별도로 운영자가 .env 로 격상한 경우)
         enrichRoles(rows.results as any[], 'role', 'email', env);
         return rows.results

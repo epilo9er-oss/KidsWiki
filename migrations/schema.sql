@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS users (
              CHECK(length(id) = 22 AND id NOT GLOB '*[^1-9A-HJ-NP-Za-km-z]*'),
   provider   TEXT NOT NULL,
   uid        TEXT NOT NULL,
-  email      TEXT NOT NULL UNIQUE,
+  -- OAuth 공급자가 제공할 때만 저장하는 선택 프로필 정보. 로그인 식별에는 사용하지 않는다.
+  email      TEXT UNIQUE,
   name       TEXT NOT NULL,
   picture    TEXT,
   -- 프로필 사진 비공개 여부. 1 이면 picture 가 지정된 정적 기본 아바타(/avatar-default.svg)로 고정되고
@@ -44,6 +45,17 @@ CREATE INDEX IF NOT EXISTS idx_user_identities_user ON user_identities(user_id);
 -- 기존 단일 OAuth 계정을 최초 실행 시 기본 identity 로 이관한다.
 INSERT OR IGNORE INTO user_identities (user_id, provider, provider_uid, provider_email)
 SELECT id, provider, uid, email FROM users;
+
+-- 중복 계정을 대표 사용자로 합친 뒤에도 예전 프로필 URL·멘션의 사용자 ID를 보존한다.
+-- alias_id 사용자는 로그인 불가능한 deleted 상태로 남고, 모든 신규 참조는 canonical_user_id를 쓴다.
+CREATE TABLE IF NOT EXISTS user_id_aliases (
+  alias_id          TEXT NOT NULL PRIMARY KEY COLLATE BINARY,
+  canonical_user_id TEXT NOT NULL,
+  created_at        INTEGER NOT NULL DEFAULT (unixepoch()),
+  CHECK(alias_id != canonical_user_id),
+  FOREIGN KEY (canonical_user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_id_aliases_canonical ON user_id_aliases(canonical_user_id);
 
 -- 세션 테이블
 CREATE TABLE IF NOT EXISTS sessions (
@@ -488,7 +500,7 @@ CREATE TABLE IF NOT EXISTS signup_requests (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   provider    TEXT NOT NULL DEFAULT 'google',  -- 'google' | 'github' | 'discord' | ...
   uid         TEXT NOT NULL,
-  email       TEXT NOT NULL,
+  email       TEXT,
   name        TEXT NOT NULL,
   picture     TEXT,
   -- 가입 신청 시 선택한 프로필 사진 비공개 여부. 승인 시 users.picture_private 로 이관된다.

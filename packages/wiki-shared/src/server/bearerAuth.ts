@@ -29,7 +29,7 @@ export interface BearerUserRow {
     uid: string;
     provider: string;
     provider_uid: string;
-    email: string;
+    email: string | null;
     name: string;
     picture: string | null;
     picture_private: number;

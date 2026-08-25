@@ -33,7 +33,7 @@ async function fetchRolesForUsers(
                  WHERE u.id IN (${placeholders})`,
             )
             .bind(...batch)
-            .all<{ id: string; email: string; role: string }>();
+            .all<{ id: string; email: string | null; role: string }>();
         enrichRoles(rows.results as any[], 'role', 'email', env);
         for (const r of rows.results) out.push({ id: r.id, role: r.role });
     }

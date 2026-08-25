@@ -41,6 +41,6 @@ export function getSuperAdmins(env: Env['Bindings']): Set<string> {
  * @param env SUPER_ADMIN_EMAILS를 포함하는 환경 바인딩
  * @returns 이메일이 최고 관리자 목록에 있으면 true, 아니면 false
  */
-export function isSuperAdmin(email: string, env: Env['Bindings']): boolean {
-    return getSuperAdmins(env).has(email);
+export function isSuperAdmin(email: string | null | undefined, env: Env['Bindings']): boolean {
+    return !!email && getSuperAdmins(env).has(email);
 }

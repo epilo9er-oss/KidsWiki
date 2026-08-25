@@ -83,6 +83,22 @@ export const naverProvider: OAuthProvider = {
                 picture: data.response.profile_image || undefined,
             },
             state: stateData,
+            accessToken: token.access_token,
         };
+    },
+
+    async disconnect(c: Context<Env>, accessToken: string): Promise<boolean> {
+        const response = await fetch('https://nid.naver.com/oauth2.0/revoke', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                client_id: c.env.NAVER_CLIENT_ID || '',
+                client_secret: c.env.NAVER_CLIENT_SECRET || '',
+                token: accessToken,
+                token_type_hint: 'access_token',
+            }),
+        });
+        if (!response.ok) console.error('Naver OAuth revoke failed:', response.status);
+        return response.ok;
     },
 };

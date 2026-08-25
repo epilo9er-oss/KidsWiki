@@ -110,7 +110,7 @@ adminRoutes.get('/users', async (c) => {
             params.push(role);
             if (superAdminsArr.length > 0) {
                 const placeholders = superAdminsArr.map(() => '?').join(',');
-                conditions.push(`email NOT IN (${placeholders})`);
+                conditions.push(`(email IS NULL OR email NOT IN (${placeholders}))`);
                 params.push(...superAdminsArr);
             }
         }
@@ -151,7 +151,7 @@ adminRoutes.get('/users', async (c) => {
     const superAdmins = getSuperAdmins(c.env);
 
     const usersProcess = users.map(u => {
-        if (superAdmins.has(u.email)) {
+        if (u.email && superAdmins.has(u.email)) {
             u.role = 'super_admin';
         } else if (u.banned_until && u.banned_until > now) {
             u.role = 'banned';
@@ -790,7 +790,7 @@ adminRoutes.put('/signup-requests/:id/approve', async (c) => {
 
     const request = await db.prepare('SELECT * FROM signup_requests WHERE id = ?')
         .bind(requestId)
-        .first<{ id: number; provider: string; uid: string; email: string; name: string; picture: string | null; picture_private: number; status: string }>();
+        .first<{ id: number; provider: string; uid: string; email: string | null; name: string; picture: string | null; picture_private: number; status: string }>();
 
     if (!request) {
         return c.json({ error: '가입 신청을 찾을 수 없습니다.' }, 404);
@@ -799,11 +799,12 @@ adminRoutes.put('/signup-requests/:id/approve', async (c) => {
         return c.json({ error: '이미 처리된 신청입니다.' }, 400);
     }
 
-    // 이메일 중복 체크 (다른 공급자로 이미 가입된 이메일)
-    const emailDup = await db
-        .prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)')
-        .bind(request.email)
-        .first<{ id: string }>();
+    // 공급자가 이메일을 제공한 경우에만 중복 계정을 확인한다.
+    const emailDup = request.email
+        ? await db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)')
+            .bind(request.email)
+            .first<{ id: string }>()
+        : null;
     if (emailDup) {
         return c.json({ error: '이미 동일한 이메일로 가입된 사용자가 있습니다.' }, 409);
     }
@@ -876,7 +877,7 @@ adminRoutes.put('/signup-requests/:id/approve', async (c) => {
         })());
     }
 
-    writeAdminLog(c, 'signup_approve', `가입 신청 승인: ${request.name} (${request.email})`, currentUser.id);
+    writeAdminLog(c, 'signup_approve', `가입 신청 승인: ${request.name} (${request.email || '이메일 없음'})`, currentUser.id);
     return c.json({ success: true });
 });
 
@@ -891,7 +892,7 @@ adminRoutes.put('/signup-requests/:id/reject', async (c) => {
 
     const request = await db.prepare('SELECT * FROM signup_requests WHERE id = ?')
         .bind(requestId)
-        .first<{ id: number; name: string; email: string; status: string }>();
+        .first<{ id: number; name: string; email: string | null; status: string }>();
 
     if (!request) {
         return c.json({ error: '가입 신청을 찾을 수 없습니다.' }, 404);
@@ -928,7 +929,7 @@ adminRoutes.put('/signup-requests/:id/reject', async (c) => {
         await deleteSignupSubscriptions(c.env, requestId);
     })());
 
-    writeAdminLog(c, 'signup_reject', `가입 신청 거절: ${request.name} (${request.email})`, currentUser.id);
+    writeAdminLog(c, 'signup_reject', `가입 신청 거절: ${request.name} (${request.email || '이메일 없음'})`, currentUser.id);
     return c.json({ success: true });
 });
 
@@ -943,7 +944,7 @@ adminRoutes.put('/signup-requests/:id/block', async (c) => {
 
     const request = await db.prepare('SELECT * FROM signup_requests WHERE id = ?')
         .bind(requestId)
-        .first<{ id: number; name: string; email: string; status: string }>();
+        .first<{ id: number; name: string; email: string | null; status: string }>();
 
     if (!request) {
         return c.json({ error: '가입 신청을 찾을 수 없습니다.' }, 404);
@@ -973,7 +974,7 @@ adminRoutes.put('/signup-requests/:id/block', async (c) => {
         await deleteSignupSubscriptions(c.env, requestId);
     })());
 
-    writeAdminLog(c, 'signup_block', `가입 신청 차단: ${request.name} (${request.email})`, currentUser.id);
+    writeAdminLog(c, 'signup_block', `가입 신청 차단: ${request.name} (${request.email || '이메일 없음'})`, currentUser.id);
     return c.json({ success: true });
 });
 
