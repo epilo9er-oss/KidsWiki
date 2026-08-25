@@ -117,7 +117,7 @@ import { renderUserAvatar } from '../utils/avatar';
                 const result = await Swal.fire({
                     icon: 'warning',
                     title: '이미 별도 계정으로 사용 중입니다',
-                    text: `${labels[mergeCandidate] || mergeCandidate} 계정의 기여·알림·로그인 수단을 현재 계정으로 합칩니다. 다른 계정의 세션은 모두 종료되며 되돌릴 수 없습니다.`,
+                    text: `${labels[mergeCandidate] || mergeCandidate} 계정과 현재 계정을 하나로 합칩니다. 최고관리자 계정이 우선 유지되고, 둘 다 최고관리자면 먼저 가입한 계정이 유지됩니다. 합쳐지는 계정의 세션은 모두 종료되며 되돌릴 수 없습니다.`,
                     showCancelButton: true,
                     confirmButtonText: `${labels[mergePrimary] || mergePrimary}로 다시 인증하고 합치기`,
                     cancelButtonText: '취소',
@@ -169,13 +169,14 @@ import { renderUserAvatar } from '../utils/avatar';
                 merge_reauth_failed: '현재 계정과 동일한 기본 로그인 수단으로 다시 인증해야 합니다.',
                 merge_identity_changed: '합칠 계정의 로그인 정보가 바뀌었습니다. 처음부터 다시 시도해주세요.',
                 account_inactive: '탈퇴 또는 차단된 계정은 합칠 수 없습니다.',
-                privileged_account: '관리 권한이 있는 계정은 자동으로 합칠 수 없습니다.',
+                privileged_account: '일반 관리자 또는 토론 관리자 계정은 자동으로 합칠 수 없습니다.',
                 provider_conflict: '두 계정에 같은 공급자의 로그인이 있어 자동으로 합칠 수 없습니다.',
                 draft_conflict: '두 계정에 같은 문서의 MCP 초안이 있어 먼저 하나를 정리해야 합니다.',
                 pending_edit_conflict: '두 계정에 같은 문서의 편집 요청이 있어 먼저 하나를 정리해야 합니다.',
                 not_found: '연결된 로그인 계정을 찾을 수 없습니다.',
                 last_identity: '마지막 로그인 계정은 연결 해지 대신 회원 탈퇴를 이용해주세요.',
                 primary_super_admin: '최고 관리자의 기준 로그인은 추가 연결을 먼저 해지한 뒤 탈퇴할 수 있습니다.',
+                protected_super_admin_email: '최고관리자 이메일은 SUPER_ADMIN_EMAILS에서 먼저 제거해야 연결이나 계정을 삭제할 수 있습니다.',
                 links_remaining: '회원 탈퇴 전에 추가 로그인 연결을 먼저 해지해주세요.',
                 last_super_admin: '마지막 활성 최고 관리자는 탈퇴할 수 없습니다. 다른 최고 관리자를 먼저 지정해주세요.',
                 identity_reauth_failed: '해지하려는 로그인 계정과 동일한 계정으로 다시 인증해주세요.',
@@ -201,6 +202,9 @@ import { renderUserAvatar } from '../utils/avatar';
                 const linked = new Set(identities.map(identity => identity.provider));
                 const rows = identities.map(identity => {
                     const lockedPrimary = identity.unlink_reason === 'primary_super_admin';
+                    const protectedEmail = identity.protected_email
+                        || identity.unlink_reason === 'protected_super_admin_email'
+                        || data.account_deletion?.reason === 'protected_super_admin_email';
                     const soleLastAdmin = identities.length === 1 && data.account_deletion?.reason === 'last_super_admin';
                     const unsupported = identity.unlink_reason === 'provider_disconnect_unsupported'
                         || data.account_deletion?.reason === 'provider_disconnect_unsupported';
@@ -208,9 +212,11 @@ import { renderUserAvatar } from '../utils/avatar';
                         ? `<button type="button" class="btn btn-sm btn-outline-danger" data-identity-unlink="${window.escapeHtml(identity.provider)}">연동 해지</button>`
                         : identities.length === 1 && data.account_deletion?.allowed
                             ? `<button type="button" class="btn btn-sm btn-outline-danger" data-identity-delete="${window.escapeHtml(identity.provider)}">회원 탈퇴</button>`
-                            : lockedPrimary
-                                ? `<span class="text-muted" tabindex="0" role="img" aria-label="다른 로그인 연결을 모두 해지하면 회원 탈퇴가 활성화됩니다." title="다른 로그인 연결을 모두 해지하면 회원 탈퇴가 활성화됩니다."><i class="mdi mdi-lock-outline"></i></span>`
-                                : soleLastAdmin
+                            : protectedEmail
+                                ? `<span class="text-muted" tabindex="0" role="img" aria-label="최고관리자 이메일은 SUPER_ADMIN_EMAILS에서 먼저 제거해야 연결을 해지할 수 있습니다." title="최고관리자 이메일은 SUPER_ADMIN_EMAILS에서 먼저 제거해야 연결을 해지할 수 있습니다."><i class="mdi mdi-lock-outline"></i></span>`
+                                : lockedPrimary
+                                    ? `<span class="text-muted" tabindex="0" role="img" aria-label="다른 로그인 연결을 모두 해지하면 회원 탈퇴가 활성화됩니다." title="다른 로그인 연결을 모두 해지하면 회원 탈퇴가 활성화됩니다."><i class="mdi mdi-lock-outline"></i></span>`
+                                    : soleLastAdmin
                                     ? `<span class="text-muted" tabindex="0" role="img" aria-label="다른 활성 최고 관리자를 먼저 지정해야 탈퇴할 수 있습니다." title="다른 활성 최고 관리자를 먼저 지정해야 탈퇴할 수 있습니다."><i class="mdi mdi-lock-outline"></i></span>`
                                     : unsupported
                                         ? `<span class="text-muted" tabindex="0" role="img" aria-label="이 로그인 공급자는 아직 안전한 연결 해제를 지원하지 않습니다." title="이 로그인 공급자는 아직 안전한 연결 해제를 지원하지 않습니다."><i class="mdi mdi-lock-outline"></i></span>`
@@ -220,7 +226,7 @@ import { renderUserAvatar } from '../utils/avatar';
                         <div class="min-w-0">
                             <strong>${window.escapeHtml(identity.label)}</strong>
                             ${identity.primary ? '<span class="badge bg-primary ms-1">기준 로그인</span>' : '<span class="badge bg-secondary ms-1">연결됨</span>'}
-                            ${identity.provider_email ? `<div class="text-muted small text-truncate">${window.escapeHtml(identity.provider_email)}</div>` : ''}
+                            ${identity.provider_email ? `<div class="text-muted small text-truncate">${window.escapeHtml(identity.provider_email)}${identity.protected_email ? ' <span class="badge bg-dark ms-1">최고관리자 이메일</span>' : ''}</div>` : ''}
                         </div>
                         ${action}
                     </div>

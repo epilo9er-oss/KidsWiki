@@ -1,5 +1,6 @@
 import type { OAuthProfile } from './providers/base';
 import { createUserId, type UserId } from '../../shared/userId.ts';
+import { isSuperAdminEmail } from '../../utils/auth.ts';
 
 export interface IdentityUser {
     id: UserId;
@@ -19,17 +20,28 @@ export interface UserIdentityRecord extends UserIdentity {
     uid: string;
 }
 
-export type IdentityUnlinkDecision = 'allowed' | 'not_found' | 'last_identity' | 'primary_super_admin';
-export type AccountDeletionDecision = 'allowed' | 'links_remaining' | 'last_super_admin';
+export type IdentityUnlinkDecision =
+    | 'allowed'
+    | 'not_found'
+    | 'last_identity'
+    | 'primary_super_admin'
+    | 'protected_super_admin_email';
+export type AccountDeletionDecision =
+    | 'allowed'
+    | 'links_remaining'
+    | 'last_super_admin'
+    | 'protected_super_admin_email';
 
 export function getIdentityUnlinkDecision(
     identities: UserIdentity[],
     provider: string,
     superAdmin: boolean,
+    superAdminEmails: ReadonlySet<string> = new Set(),
 ): IdentityUnlinkDecision {
     const identity = identities.find(item => item.provider === provider);
     if (!identity) return 'not_found';
     if (identities.length <= 1) return 'last_identity';
+    if (isSuperAdminEmail(identity.provider_email, superAdminEmails)) return 'protected_super_admin_email';
     if (superAdmin && identity.primary) return 'primary_super_admin';
     return 'allowed';
 }
@@ -37,8 +49,10 @@ export function getIdentityUnlinkDecision(
 export function getAccountDeletionDecision(
     identityCount: number,
     lastActiveSuperAdmin: boolean,
+    protectedSuperAdminEmail = false,
 ): AccountDeletionDecision {
     if (identityCount !== 1) return 'links_remaining';
+    if (protectedSuperAdminEmail) return 'protected_super_admin_email';
     return lastActiveSuperAdmin ? 'last_super_admin' : 'allowed';
 }
 
@@ -140,6 +154,56 @@ export async function updateIdentityEmail(
         .run();
 }
 
+/** 대표 이메일은 기준 Identity와 맞추되, 연결된 최고관리자 Identity가 있으면 그것을 기준으로 삼는다. */
+export async function reconcilePrimaryIdentity(
+    db: D1Database,
+    userId: UserId,
+    superAdminEmails: ReadonlySet<string>,
+): Promise<boolean> {
+    await ensureUserIdentities(db);
+    const user = await db.prepare('SELECT provider, uid, email FROM users WHERE id = ?')
+        .bind(userId)
+        .first<{ provider: string; uid: string; email: string | null }>();
+    if (!user) return false;
+
+    const { results } = await db.prepare(`
+        SELECT provider, provider_uid AS uid, provider_email, created_at
+        FROM user_identities
+        WHERE user_id = ?
+        ORDER BY created_at ASC, provider ASC
+    `).bind(userId).all<{
+        provider: string;
+        uid: string;
+        provider_email: string | null;
+        created_at: number;
+    }>();
+    const identities = results ?? [];
+    if (identities.length === 0) return false;
+
+    const current = identities.find(identity => identity.provider === user.provider && identity.uid === user.uid);
+    const currentEmail = current?.provider_email ?? user.email;
+    const protectedIdentity = current && isSuperAdminEmail(currentEmail, superAdminEmails)
+        ? current
+        : identities.find(identity => isSuperAdminEmail(identity.provider_email, superAdminEmails));
+    const target = protectedIdentity ?? current ?? identities[0];
+    if (!target) return false;
+    const targetEmail = target.provider_email ?? (target === current ? user.email : null);
+    if (user.provider === target.provider && user.uid === target.uid && user.email === targetEmail) return false;
+
+    const batch = await db.batch([
+        db.prepare(`UPDATE users SET provider = 'retired', uid = id
+                    WHERE id != ? AND role = 'deleted' AND provider = ? AND uid = ?`)
+            .bind(userId, target.provider, target.uid),
+        db.prepare(`UPDATE users SET provider = ?, uid = ?, email = ?
+                    WHERE id = ? AND EXISTS (
+                        SELECT 1 FROM user_identities
+                        WHERE user_id = ? AND provider = ? AND provider_uid = ?
+                    )`)
+            .bind(target.provider, target.uid, targetEmail, userId, userId, target.provider, target.uid),
+    ]);
+    return Number(batch[1]?.meta.changes ?? 0) > 0;
+}
+
 export async function linkIdentity(
     db: D1Database,
     userId: UserId,
@@ -223,9 +287,10 @@ export async function unlinkIdentity(
     userId: UserId,
     provider: string,
     superAdmin: boolean,
+    superAdminEmails: ReadonlySet<string> = new Set(),
 ): Promise<UnlinkIdentityResult> {
     const identities = await listUserIdentities(db, userId);
-    const decision = getIdentityUnlinkDecision(identities, provider, superAdmin);
+    const decision = getIdentityUnlinkDecision(identities, provider, superAdmin, superAdminEmails);
     if (decision !== 'allowed') return decision;
 
     const target = await findUserIdentity(db, userId, provider);
@@ -248,7 +313,7 @@ export async function unlinkIdentity(
             db.prepare(`UPDATE users SET provider = 'retired', uid = id
                         WHERE id != ? AND role = 'deleted' AND provider = ? AND uid = ?`)
                 .bind(userId, nextRecord.provider, nextRecord.uid),
-            db.prepare(`UPDATE users SET provider = ?, uid = ?
+            db.prepare(`UPDATE users SET provider = ?, uid = ?, email = ?
                         WHERE id = ? AND provider = ? AND uid = ?
                           AND (SELECT COUNT(*) FROM user_identities WHERE user_id = ?) > 1
                           AND EXISTS (
@@ -258,6 +323,7 @@ export async function unlinkIdentity(
                 .bind(
                     nextRecord.provider,
                     nextRecord.uid,
+                    nextRecord.provider_email,
                     userId,
                     target.provider,
                     target.uid,
@@ -277,7 +343,12 @@ export async function unlinkIdentity(
         if (Number(results[2]?.meta.changes ?? 0) > 0) return 'unlinked';
     }
 
-    const after = getIdentityUnlinkDecision(await listUserIdentities(db, userId), provider, superAdmin);
+    const after = getIdentityUnlinkDecision(
+        await listUserIdentities(db, userId),
+        provider,
+        superAdmin,
+        superAdminEmails,
+    );
     if (after !== 'allowed') return after;
     throw new Error('OAuth identity unlink did not change the database');
 }

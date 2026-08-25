@@ -1,10 +1,11 @@
+import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { getCookie } from 'hono/cookie';
 import { isSuperAdmin } from '../utils/auth';
 import { RBAC } from '../utils/role';
 import { ensureMcpInstantApplyMigration } from '../utils/mcpInstantApplyMigration';
 import type { Env, User } from '../types';
-import { isUserId } from '../shared/userId';
+import { isUserId, type UserId } from '../shared/userId';
 
 /**
  * RBAC 인스턴스를 초기화하여 Context에 주입하는 미들웨어.
@@ -25,6 +26,19 @@ export const rbacMiddleware = createMiddleware<Env>(async (c, next) => {
  * 성능 최적화: KV에 세션 정보를 캐싱하여 D1 쿼리 횟수를 최소화한다.
  */
 const SESSION_CACHE_TTL = 1800; // KV 캐시 TTL: 30분
+
+export async function invalidateUserSessionCaches(c: Context<Env>, userId: UserId): Promise<void> {
+    const sessions = await c.env.DB.prepare('SELECT id FROM sessions WHERE user_id = ?')
+        .bind(userId)
+        .all<{ id: string }>();
+    const ids = (sessions.results ?? []).map(session => session.id);
+    const results = await Promise.allSettled(ids.map(id => c.env.KV.delete(`session:${id}`)));
+    const failed = ids.filter((_, index) => results[index].status === 'rejected');
+    if (failed.length > 0) {
+        console.error(`Failed to invalidate ${failed.length} session cache entries; retrying`);
+        c.executionCtx.waitUntil(Promise.all(failed.map(id => c.env.KV.delete(`session:${id}`))).then(() => undefined));
+    }
+}
 
 export const sessionMiddleware = createMiddleware<Env>(async (c, next) => {
     const sessionId = getCookie(c, 'wiki_session');

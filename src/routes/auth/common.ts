@@ -3,7 +3,8 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { Env } from '../../types';
 import type { UserId } from '../../shared/userId';
 import type { OAuthProfile, OAuthStateData } from './providers/base';
-import { isEmailDomainAllowed, isSuperAdmin } from '../../utils/auth';
+import { getSuperAdmins, isEmailDomainAllowed } from '../../utils/auth';
+import { invalidateUserSessionCaches } from '../../middleware/session';
 import { dispatchDiscord } from '../../utils/webhook/discord';
 import { userJoined } from '../../utils/webhook/events/signup';
 import {
@@ -12,6 +13,7 @@ import {
     findUserByIdentity,
     linkIdentity,
     parsePendingOAuthIdentity,
+    reconcilePrimaryIdentity,
     type PendingOAuthIdentity,
     updateIdentityEmail,
 } from './identities';
@@ -36,6 +38,15 @@ export const SESSION_TTL_REMEMBER = 60 * 60 * 24 * 365; // 1년
 export const SESSION_TTL_DEFAULT = 60 * 60 * 6; // 6시간
 
 const PENDING_AUTH_TTL = 600;
+
+async function refreshPrimaryIdentity(
+    c: Context<Env>,
+    userId: UserId,
+): Promise<void> {
+    if (await reconcilePrimaryIdentity(c.env.DB, userId, getSuperAdmins(c.env))) {
+        await invalidateUserSessionCaches(c, userId);
+    }
+}
 
 export async function handleOAuthLogin(c: Context<Env>, profile: OAuthProfile, redirectUrl?: string, remember = false): Promise<Response> {
     const db = c.env.DB;
@@ -76,6 +87,7 @@ export async function handleOAuthLogin(c: Context<Env>, profile: OAuthProfile, r
     }
 
     await updateIdentityEmail(db, profile.provider, profile.uid, profile.email);
+    await refreshPrimaryIdentity(c, existingUser.id);
 
     // 대표 프로필 사진은 기본 로그인 수단으로 로그인했을 때만 갱신한다.
     if (existingUser.provider === profile.provider && existingUser.uid === profile.uid) {
@@ -183,6 +195,10 @@ export async function handleOAuthLink(
     }
 
     const owner = await findUserByIdentity(c.env.DB, profile.provider, profile.uid);
+    if (owner) {
+        await updateIdentityEmail(c.env.DB, profile.provider, profile.uid, profile.email);
+        await refreshPrimaryIdentity(c, owner.id);
+    }
     if (owner && owner.id !== currentUser.id) {
         const token = crypto.randomUUID();
         const browserNonce = crypto.randomUUID();
@@ -210,6 +226,7 @@ export async function handleOAuthLink(
 
     const result = owner ? 'already_linked' : await linkIdentity(c.env.DB, currentUser.id, profile);
     if (result === 'linked' || result === 'already_linked') {
+        if (!owner) await refreshPrimaryIdentity(c, currentUser.id);
         return c.redirect(`/mypage?identity_linked=${encodeURIComponent(profile.provider)}`);
     }
     return c.redirect(`/mypage?identity_error=${encodeURIComponent(result)}`);
@@ -238,6 +255,7 @@ export async function handlePendingIdentityAttach(
         return c.redirect(`/?error=${encodeURIComponent(result)}`);
     }
 
+    await refreshPrimaryIdentity(c, target.id);
     await createSession(c, target.id, pending.remember);
     deleteCookie(c, 'oauth_identity_nonce', { path: '/auth', secure: true, sameSite: 'Lax' });
     return c.redirect(`/?info=account_linked&provider=${encodeURIComponent(pending.profile.provider)}`);
@@ -269,18 +287,14 @@ export async function handlePendingAccountMerge(
         return c.redirect('/mypage?identity_error=session_mismatch');
     }
 
-    const survivor = await c.env.DB.prepare('SELECT provider, uid, email FROM users WHERE id = ?')
+    const currentAccount = await c.env.DB.prepare('SELECT provider, uid FROM users WHERE id = ?')
         .bind(pending.survivorUserId)
-        .first<{ provider: string; uid: string; email: string | null }>();
-    const absorbed = await c.env.DB.prepare('SELECT email FROM users WHERE id = ?')
-        .bind(pending.absorbedUserId)
-        .first<{ email: string | null }>();
-    if (!survivor || !absorbed || profile.provider !== survivor.provider || profile.uid !== survivor.uid) {
+        .first<{ provider: string; uid: string }>();
+    if (!currentAccount || profile.provider !== currentAccount.provider || profile.uid !== currentAccount.uid) {
         return c.redirect('/mypage?identity_error=merge_reauth_failed');
     }
-    if (currentUser.role !== 'user' || isSuperAdmin(survivor.email, c.env) || isSuperAdmin(absorbed.email, c.env)) {
-        return c.redirect('/mypage?identity_error=privileged_account');
-    }
+    await updateIdentityEmail(c.env.DB, profile.provider, profile.uid, profile.email);
+    await refreshPrimaryIdentity(c, currentUser.id);
 
     const identityOwner = await findUserByIdentity(
         c.env.DB,
@@ -291,13 +305,22 @@ export async function handlePendingAccountMerge(
         return c.redirect('/mypage?identity_error=merge_identity_changed');
     }
 
-    const result = await mergeAccounts(c.env.DB, pending.survivorUserId, pending.absorbedUserId);
+    const result = await mergeAccounts(
+        c.env.DB,
+        pending.survivorUserId,
+        pending.absorbedUserId,
+        getSuperAdmins(c.env),
+    );
     await c.env.KV.delete(`pending_account_merge:${token}`);
     deleteCookie(c, 'oauth_merge_nonce', { path: '/auth', secure: true, sameSite: 'Lax' });
     if (result.status !== 'merged') {
         return c.redirect(`/mypage?identity_error=${encodeURIComponent(result.status)}`);
     }
     await Promise.all(result.revokedSessionIds.map(id => c.env.KV.delete(`session:${id}`)));
+    if (result.survivorUserId) await invalidateUserSessionCaches(c, result.survivorUserId);
+    if (result.absorbedUserId === currentUser.id && result.survivorUserId) {
+        await createSession(c, result.survivorUserId);
+    }
     return c.redirect(`/mypage?identity_merged=${encodeURIComponent(pending.absorbedIdentity.provider)}`);
 }
 

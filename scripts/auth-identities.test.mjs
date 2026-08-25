@@ -43,10 +43,19 @@ test('일반 사용자와 최고 관리자의 연결 해지·탈퇴 규칙을 �
     assert.equal(getIdentityUnlinkDecision(identities, 'google', false), 'allowed');
     assert.equal(getIdentityUnlinkDecision(identities, 'google', true), 'primary_super_admin');
     assert.equal(getIdentityUnlinkDecision(identities, 'naver', true), 'allowed');
+    const protectedIdentities = [
+        identities[0],
+        { ...identities[1], provider_email: 'admin@example.com' },
+    ];
+    assert.equal(
+        getIdentityUnlinkDecision(protectedIdentities, 'naver', true, new Set(['admin@example.com'])),
+        'protected_super_admin_email',
+    );
     assert.equal(getIdentityUnlinkDecision([identities[0]], 'google', false), 'last_identity');
     assert.equal(getAccountDeletionDecision(2, false), 'links_remaining');
     assert.equal(getAccountDeletionDecision(1, false), 'allowed');
     assert.equal(getAccountDeletionDecision(1, true), 'last_super_admin');
+    assert.equal(getAccountDeletionDecision(1, false, true), 'protected_super_admin_email');
 });
 
 test('신규 사용자와 identity에는 이메일 없음이 NULL로 저장된다', async () => {

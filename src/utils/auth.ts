@@ -31,8 +31,18 @@ export function isEmailDomainAllowed(email: string, restriction: string, listRaw
  * @returns 최고 관리자 이메일 Set
  */
 export function getSuperAdmins(env: Env['Bindings']): Set<string> {
-    const emails = (env.SUPER_ADMIN_EMAILS || '').split(',').map(e => e.trim()).filter(e => e.length > 0);
+    const emails = (env.SUPER_ADMIN_EMAILS || '')
+        .split(',')
+        .map(email => email.trim().toLowerCase())
+        .filter(email => email.length > 0);
     return new Set(emails);
+}
+
+export function isSuperAdminEmail(
+    email: string | null | undefined,
+    superAdminEmails: ReadonlySet<string>,
+): boolean {
+    return !!email && superAdminEmails.has(email.trim().toLowerCase());
 }
 
 /**
@@ -42,5 +52,5 @@ export function getSuperAdmins(env: Env['Bindings']): Set<string> {
  * @returns 이메일이 최고 관리자 목록에 있으면 true, 아니면 false
  */
 export function isSuperAdmin(email: string | null | undefined, env: Env['Bindings']): boolean {
-    return !!email && getSuperAdmins(env).has(email);
+    return isSuperAdminEmail(email, getSuperAdmins(env));
 }

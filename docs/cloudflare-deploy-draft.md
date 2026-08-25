@@ -147,7 +147,7 @@ RAG를 쓰는 운영 설정에서는 위 두 블록을 활성화하고 `[vars]`�
 - `MEDIA_PUBLIC_URL`: `https://<배포주소>/media`
 - `WIKI_PUBLIC_BASE_URL`: `https://<배포주소>`
 - `GOOGLE_CLIENT_ID`, `DISCORD_CLIENT_ID`, `NAVER_CLIENT_ID`, `KAKAO_CLIENT_ID`: 실제로 활성화할 OAuth 공급자의 값
-- `SUPER_ADMIN_EMAILS`: 실제 관리자 이메일
+- `SUPER_ADMIN_EMAILS`: OAuth 공급자가 반환할 실제 관리자 이메일. 공백과 대소문자는 무시한다.
 - 첫 확인 전에는 `MCP_MODE = "disabled"`, `ALLOW_CRAWL = "false"` 권장
 - 비공개 테스트라면 `WIKI_VISIBILITY = "closed"` 검토
 
@@ -253,6 +253,10 @@ https://wiki.example.com/auth/google/callback
 현재 구현은 서버 측 OAuth라 **승인된 JavaScript 원본**은 필수가 아니다. 이미 원본을 등록해 관리하고 있다면 `https://wiki.example.com`도 추가한다.
 
 네이버 개발자 센터와 Kakao Developers에도 각각 위의 정확한 callback URI를 등록한다. 코드를 먼저 배포할 때는 `AUTH_PROVIDERS = "google"`처럼 기존 공급자만 유지하고, 앱 심사·동의 항목·Secret 등록을 마친 뒤 `naver`, 다음 `kakao`를 한 개씩 추가해 로그인과 마이페이지 계정 연결을 확인한다.
+
+연결된 OAuth 공급자가 반환한 이메일은 공급자별로 각각 보관된다. 프로필에는 기준 로그인의 Primary Email만 표시하고, 마이페이지 계정 연결 관리에서는 본인에게 모든 Provider Email을 표시한다. `SUPER_ADMIN_EMAILS`에 해당하는 Provider Email은 운영 설정에서 먼저 제거하기 전까지 해당 로그인 연결과 계정을 삭제할 수 없다. 이메일을 직접 입력해 최고관리자가 되는 방식은 지원하지 않으며, 공급자가 이메일을 새로 제공하기 시작하면 해당 로그인으로 다시 인증할 때 자동 반영된다.
+
+서로 따로 가입된 계정을 연결할 때 한쪽만 `SUPER_ADMIN_EMAILS`에 해당하면 최고관리자 계정이 유지된다. 양쪽 모두 최고관리자라면 가입 시각이 빠른 계정이 유지되고, 둘 다 일반 사용자라면 연결을 시작한 현재 계정이 유지된다.
 
 ### 6.3. 배포하고 기존 주소 정리
 

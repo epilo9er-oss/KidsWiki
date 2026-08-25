@@ -100,7 +100,7 @@ adminRoutes.get('/users', async (c) => {
         if (role === 'super_admin') {
             if (superAdminsArr.length > 0) {
                 const placeholders = superAdminsArr.map(() => '?').join(',');
-                conditions.push(`email IN (${placeholders})`);
+                conditions.push(`LOWER(TRIM(email)) IN (${placeholders})`);
                 params.push(...superAdminsArr);
             } else {
                 conditions.push(`1 = 0`); // No super admins
@@ -110,7 +110,7 @@ adminRoutes.get('/users', async (c) => {
             params.push(role);
             if (superAdminsArr.length > 0) {
                 const placeholders = superAdminsArr.map(() => '?').join(',');
-                conditions.push(`(email IS NULL OR email NOT IN (${placeholders}))`);
+                conditions.push(`(email IS NULL OR LOWER(TRIM(email)) NOT IN (${placeholders}))`);
                 params.push(...superAdminsArr);
             }
         }
@@ -148,10 +148,8 @@ adminRoutes.get('/users', async (c) => {
 
     // 이메일에 따른 super_admin 가상 권한 부여
     const now = Math.floor(Date.now() / 1000);
-    const superAdmins = getSuperAdmins(c.env);
-
     const usersProcess = users.map(u => {
-        if (u.email && superAdmins.has(u.email)) {
+        if (isSuperAdmin(u.email, c.env)) {
             u.role = 'super_admin';
         } else if (u.banned_until && u.banned_until > now) {
             u.role = 'banned';

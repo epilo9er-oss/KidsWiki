@@ -1,4 +1,5 @@
 import { isUserId, type UserId } from '../../shared/userId.ts';
+import { isSuperAdminEmail } from '../../utils/auth.ts';
 
 export interface PendingAccountMerge {
     survivorUserId: UserId;
@@ -20,6 +21,8 @@ export type AccountMergeStatus =
 export interface AccountMergeResult {
     status: AccountMergeStatus;
     revokedSessionIds: string[];
+    survivorUserId?: UserId;
+    absorbedUserId?: UserId;
 }
 
 export function parsePendingAccountMerge(raw: string): PendingAccountMerge | null {
@@ -86,30 +89,100 @@ export async function resolveCanonicalUserIds(db: D1Database, userIds: UserId[])
  */
 export async function mergeAccounts(
     db: D1Database,
-    survivorUserId: UserId,
-    absorbedUserId: UserId,
+    preferredSurvivorUserId: UserId,
+    otherUserId: UserId,
+    superAdminEmails: ReadonlySet<string> = new Set(),
 ): Promise<AccountMergeResult> {
     const empty = (status: AccountMergeStatus): AccountMergeResult => ({ status, revokedSessionIds: [] });
-    if (survivorUserId === absorbedUserId) return empty('same_user');
+    if (preferredSurvivorUserId === otherUserId) return empty('same_user');
 
     await ensureUserAliases(db);
 
     const { results: users } = await db.prepare(
-        'SELECT id, role, banned_until FROM users WHERE id IN (?, ?)',
-    ).bind(survivorUserId, absorbedUserId).all<{ id: UserId; role: string; banned_until: number | null }>();
+        'SELECT id, provider, uid, role, banned_until, email, created_at FROM users WHERE id IN (?, ?)',
+    ).bind(preferredSurvivorUserId, otherUserId).all<{
+        id: UserId;
+        provider: string;
+        uid: string;
+        role: string;
+        banned_until: number | null;
+        email: string | null;
+        created_at: number;
+    }>();
     if ((users ?? []).length !== 2) return empty('user_not_found');
 
     const now = Math.floor(Date.now() / 1000);
     if (users.some(user => user.role === 'deleted' || user.role === 'banned' || (user.banned_until ?? 0) > now)) {
         return empty('account_inactive');
     }
-    if (users.some(user => user.role !== 'user')) return empty('privileged_account');
 
     const { results: identities } = await db.prepare(
-        'SELECT user_id, provider FROM user_identities WHERE user_id IN (?, ?)',
-    ).bind(survivorUserId, absorbedUserId).all<{ user_id: UserId; provider: string }>();
-    const survivorProviders = new Set((identities ?? []).filter(row => row.user_id === survivorUserId).map(row => row.provider));
-    if ((identities ?? []).some(row => row.user_id === absorbedUserId && survivorProviders.has(row.provider))) {
+        `SELECT user_id, provider, provider_uid AS uid, provider_email, created_at
+         FROM user_identities WHERE user_id IN (?, ?)`,
+    ).bind(preferredSurvivorUserId, otherUserId).all<{
+        user_id: UserId;
+        provider: string;
+        uid: string;
+        provider_email: string | null;
+        created_at: number;
+    }>();
+
+    const adminEmailByUserId = new Map<UserId, string | null>();
+    for (const user of users) {
+        const emails = [
+            user.email,
+            ...(identities ?? [])
+                .filter(identity => identity.user_id === user.id)
+                .map(identity => identity.provider_email),
+        ];
+        adminEmailByUserId.set(
+            user.id,
+            emails.find(email => isSuperAdminEmail(email, superAdminEmails)) ?? null,
+        );
+    }
+    const isSuperAdminAccount = (user: (typeof users)[number]): boolean =>
+        user.role === 'super_admin' || adminEmailByUserId.get(user.id) !== null;
+    if (users.some(user => user.role !== 'user' && !isSuperAdminAccount(user))) {
+        return empty('privileged_account');
+    }
+
+    const preferred = users.find(user => user.id === preferredSurvivorUserId)!;
+    const other = users.find(user => user.id === otherUserId)!;
+    const preferredIsSuperAdmin = isSuperAdminAccount(preferred);
+    const otherIsSuperAdmin = isSuperAdminAccount(other);
+    let survivor = preferred;
+    let absorbed = other;
+    if (preferredIsSuperAdmin !== otherIsSuperAdmin) {
+        [survivor, absorbed] = preferredIsSuperAdmin ? [preferred, other] : [other, preferred];
+    } else if (preferredIsSuperAdmin && otherIsSuperAdmin) {
+        const preferredIsOlder = preferred.created_at < other.created_at
+            || (preferred.created_at === other.created_at && preferred.id < other.id);
+        [survivor, absorbed] = preferredIsOlder ? [preferred, other] : [other, preferred];
+    }
+    const survivorUserId = survivor.id;
+    const absorbedUserId = absorbed.id;
+    const allIdentities = identities ?? [];
+    const survivorPrimary = allIdentities.find(identity =>
+        identity.user_id === survivorUserId
+        && identity.provider === survivor.provider
+        && identity.uid === survivor.uid,
+    );
+    const survivorPrimaryEmail = survivorPrimary?.provider_email ?? survivor.email;
+    const protectedIdentity = survivorPrimary && isSuperAdminEmail(survivorPrimaryEmail, superAdminEmails)
+        ? survivorPrimary
+        : allIdentities
+            .filter(identity => identity.user_id === survivorUserId)
+            .filter(identity => isSuperAdminEmail(identity.provider_email, superAdminEmails))
+            .sort((a, b) => a.created_at - b.created_at || a.provider.localeCompare(b.provider))[0]
+            ?? allIdentities
+                .filter(identity => isSuperAdminEmail(identity.provider_email, superAdminEmails))
+                .sort((a, b) => a.created_at - b.created_at || a.provider.localeCompare(b.provider))[0];
+    const targetPrimary = protectedIdentity ?? survivorPrimary;
+    const targetPrimaryEmail = targetPrimary?.provider_email
+        ?? (targetPrimary === survivorPrimary ? survivor.email : null);
+
+    const survivorProviders = new Set(allIdentities.filter(row => row.user_id === survivorUserId).map(row => row.provider));
+    if (allIdentities.some(row => row.user_id === absorbedUserId && survivorProviders.has(row.provider))) {
         return empty('provider_conflict');
     }
 
@@ -133,7 +206,13 @@ export async function mergeAccounts(
         .all<{ id: string }>();
     const revokedSessionIds = (sessionRows.results ?? []).map(row => row.id);
 
-    await db.batch([
+    const statements = [
+        db.prepare("UPDATE users SET provider = 'retired', uid = id WHERE id = ?").bind(absorbedUserId),
+        ...(targetPrimary ? [
+            db.prepare(`UPDATE users SET provider = 'retired', uid = id
+                        WHERE id != ? AND role = 'deleted' AND provider = ? AND uid = ?`)
+                .bind(survivorUserId, targetPrimary.provider, targetPrimary.uid),
+        ] : []),
         db.prepare('UPDATE user_id_aliases SET canonical_user_id = ? WHERE canonical_user_id = ?')
             .bind(survivorUserId, absorbedUserId),
         db.prepare(`INSERT INTO user_id_aliases (alias_id, canonical_user_id)
@@ -141,6 +220,22 @@ export async function mergeAccounts(
                     ON CONFLICT(alias_id) DO UPDATE SET canonical_user_id = excluded.canonical_user_id`)
             .bind(absorbedUserId, survivorUserId),
         db.prepare('UPDATE user_identities SET user_id = ? WHERE user_id = ?').bind(survivorUserId, absorbedUserId),
+        ...(targetPrimary ? [
+            db.prepare(`UPDATE users SET provider = ?, uid = ?, email = ?
+                        WHERE id = ? AND EXISTS (
+                            SELECT 1 FROM user_identities
+                            WHERE user_id = ? AND provider = ? AND provider_uid = ?
+                        )`)
+                .bind(
+                    targetPrimary.provider,
+                    targetPrimary.uid,
+                    targetPrimaryEmail,
+                    survivorUserId,
+                    survivorUserId,
+                    targetPrimary.provider,
+                    targetPrimary.uid,
+                ),
+        ] : []),
         db.prepare('UPDATE revisions SET author_id = ? WHERE author_id = ?').bind(survivorUserId, absorbedUserId),
         db.prepare('UPDATE media SET uploader_id = ? WHERE uploader_id = ?').bind(survivorUserId, absorbedUserId),
         db.prepare('UPDATE category_acl SET created_by = ? WHERE created_by = ?').bind(survivorUserId, absorbedUserId),
@@ -184,7 +279,8 @@ export async function mergeAccounts(
                     SET role = 'deleted', name = '통합된 사용자', picture = NULL, picture_private = 1,
                         email = NULL, banned_until = NULL
                     WHERE id = ?`).bind(absorbedUserId),
-    ]);
+    ];
+    await db.batch(statements);
 
-    return { status: 'merged', revokedSessionIds };
+    return { status: 'merged', revokedSessionIds, survivorUserId, absorbedUserId };
 }

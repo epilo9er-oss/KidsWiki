@@ -2,8 +2,8 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Env } from '../../types';
-import { requireAuth, requireAuthAllowBanned } from '../../middleware/session';
-import { getSuperAdmins, isSuperAdmin, PRIVATE_AVATAR_PATH } from '../../utils/auth';
+import { invalidateUserSessionCaches, requireAuth, requireAuthAllowBanned } from '../../middleware/session';
+import { getSuperAdmins, isSuperAdmin, isSuperAdminEmail, PRIVATE_AVATAR_PATH } from '../../utils/auth';
 import type { OAuthCallbackResult, OAuthProvider, OAuthProfile, OAuthStateData } from './providers/base';
 import { googleProvider } from './providers/google';
 import { discordProvider } from './providers/discord';
@@ -34,7 +34,9 @@ import {
     getIdentityUnlinkDecision,
     hasProviderIdentity,
     listUserIdentities,
+    reconcilePrimaryIdentity,
     unlinkIdentity,
+    updateIdentityEmail,
 } from './identities';
 import { isUserId, type UserId } from '../../shared/userId';
 import { resolveCanonicalUserId } from './accountMerge';
@@ -104,23 +106,10 @@ async function isLastActiveSuperAdmin(c: Context<Env>, userId: UserId): Promise<
     const other = await c.env.DB.prepare(`
         SELECT 1 FROM users
         WHERE id != ? AND role != 'deleted'
-          AND email IN (${emails.map(() => '?').join(',')})
+          AND LOWER(TRIM(email)) IN (${emails.map(() => '?').join(',')})
         LIMIT 1
     `).bind(userId, ...emails).first();
     return !other;
-}
-
-async function invalidateUserSessionCaches(c: Context<Env>, userId: UserId): Promise<void> {
-    const sessions = await c.env.DB.prepare('SELECT id FROM sessions WHERE user_id = ?')
-        .bind(userId)
-        .all<{ id: string }>();
-    const ids = (sessions.results ?? []).map(session => session.id);
-    const results = await Promise.allSettled(ids.map(id => c.env.KV.delete(`session:${id}`)));
-    const failed = ids.filter((_, index) => results[index].status === 'rejected');
-    if (failed.length > 0) {
-        console.error(`Failed to invalidate ${failed.length} session cache entries; retrying`);
-        c.executionCtx.waitUntil(Promise.all(failed.map(id => c.env.KV.delete(`session:${id}`))).then(() => undefined));
-    }
 }
 
 async function finalizeAccountDeletion(c: Context<Env>, userId: UserId): Promise<void> {
@@ -174,10 +163,15 @@ async function handleIdentityManagementCallback(
         return c.redirect('/mypage?identity_error=identity_changed');
     }
 
+    await updateIdentityEmail(c.env.DB, profile.provider, profile.uid, profile.email);
+    if (await reconcilePrimaryIdentity(c.env.DB, currentUser.id, getSuperAdmins(c.env))) {
+        await invalidateUserSessionCaches(c, currentUser.id);
+    }
     const identities = await listUserIdentities(c.env.DB, currentUser.id);
     const superAdmin = currentUser.role === 'super_admin';
+    const superAdminEmails = getSuperAdmins(c.env);
     if (state.intent === 'unlink') {
-        const decision = getIdentityUnlinkDecision(identities, provider.name, superAdmin);
+        const decision = getIdentityUnlinkDecision(identities, provider.name, superAdmin, superAdminEmails);
         if (decision !== 'allowed') {
             return c.redirect(`/mypage?identity_error=${encodeURIComponent(decision)}`);
         }
@@ -185,6 +179,7 @@ async function handleIdentityManagementCallback(
         const decision = getAccountDeletionDecision(
             identities.length,
             await isLastActiveSuperAdmin(c, currentUser.id),
+            identities.some(identity => isSuperAdminEmail(identity.provider_email, superAdminEmails)),
         );
         if (decision !== 'allowed' || identities[0]?.provider !== provider.name) {
             return c.redirect(`/mypage?identity_error=${encodeURIComponent(
@@ -209,7 +204,13 @@ async function handleIdentityManagementCallback(
 
     if (state.intent === 'unlink') {
         try {
-            const unlinked = await unlinkIdentity(c.env.DB, currentUser.id, provider.name, superAdmin);
+            const unlinked = await unlinkIdentity(
+                c.env.DB,
+                currentUser.id,
+                provider.name,
+                superAdmin,
+                superAdminEmails,
+            );
             if (unlinked !== 'unlinked') {
                 return c.redirect(`/mypage?identity_error=${encodeURIComponent(unlinked)}`);
             }
@@ -285,7 +286,12 @@ for (const [name, provider] of Object.entries(providerRegistry)) {
         }
 
         const identities = await listUserIdentities(c.env.DB, user.id);
-        const decision = getIdentityUnlinkDecision(identities, name, user.role === 'super_admin');
+        const decision = getIdentityUnlinkDecision(
+            identities,
+            name,
+            user.role === 'super_admin',
+            getSuperAdmins(c.env),
+        );
         if (decision !== 'allowed') {
             return c.redirect(`/mypage?identity_error=${encodeURIComponent(decision)}`);
         }
@@ -310,9 +316,11 @@ for (const [name, provider] of Object.entries(providerRegistry)) {
         }
 
         const identities = await listUserIdentities(c.env.DB, user.id);
+        const superAdminEmails = getSuperAdmins(c.env);
         const decision = getAccountDeletionDecision(
             identities.length,
             await isLastActiveSuperAdmin(c, user.id),
+            identities.some(identity => isSuperAdminEmail(identity.provider_email, superAdminEmails)),
         );
         if (decision !== 'allowed') {
             return c.redirect(`/mypage?identity_error=${encodeURIComponent(decision)}`);
@@ -467,9 +475,11 @@ auth.get('/api/me/identities', requireAuth, async (c) => {
     const active = parseProviders(c.env.AUTH_PROVIDERS).filter(name => providerRegistry[name]);
     const identities = await listUserIdentities(c.env.DB, user.id);
     const superAdmin = user.role === 'super_admin';
+    const superAdminEmails = getSuperAdmins(c.env);
     const accountDeletion = getAccountDeletionDecision(
         identities.length,
         identities.length === 1 && await isLastActiveSuperAdmin(c, user.id),
+        identities.some(identity => isSuperAdminEmail(identity.provider_email, superAdminEmails)),
     );
     const accountProvider = identities.length === 1 ? providerRegistry[identities[0].provider] : undefined;
     const accountDeletionReason = accountDeletion === 'allowed' && !accountProvider?.disconnect
@@ -477,11 +487,17 @@ auth.get('/api/me/identities', requireAuth, async (c) => {
         : accountDeletion;
     return c.json({
         identities: identities.map(identity => {
-            const unlinkReason = getIdentityUnlinkDecision(identities, identity.provider, superAdmin);
+            const unlinkReason = getIdentityUnlinkDecision(
+                identities,
+                identity.provider,
+                superAdmin,
+                superAdminEmails,
+            );
             const supported = !!providerRegistry[identity.provider]?.disconnect;
             return {
                 ...identity,
                 label: providerRegistry[identity.provider]?.label || identity.provider,
+                protected_email: isSuperAdminEmail(identity.provider_email, superAdminEmails),
                 can_unlink: unlinkReason === 'allowed' && supported,
                 unlink_reason: unlinkReason === 'allowed' && !supported
                     ? 'provider_disconnect_unsupported'
@@ -503,7 +519,12 @@ auth.delete('/api/me/identities/:provider', requireAuth, async (c) => {
 
     const user = c.get('user')!;
     const identities = await listUserIdentities(c.env.DB, user.id);
-    const decision = getIdentityUnlinkDecision(identities, provider, user.role === 'super_admin');
+    const decision = getIdentityUnlinkDecision(
+        identities,
+        provider,
+        user.role === 'super_admin',
+        getSuperAdmins(c.env),
+    );
     if (decision !== 'allowed') {
         return c.json({ error: '현재 상태에서는 이 로그인 연결을 해제할 수 없습니다.', code: decision }, 409);
     }
@@ -611,7 +632,7 @@ auth.post('/api/auth/signup-request', async (c) => {
     const superAdminEmails = getSuperAdmins(c.env);
     const superAdminUsers = superAdminEmails.size > 0
         ? await db.prepare(
-            `SELECT id, email FROM users WHERE email IN (${Array.from(superAdminEmails).map(() => '?').join(',')}) AND role != 'deleted'`
+            `SELECT id, email FROM users WHERE LOWER(TRIM(email)) IN (${Array.from(superAdminEmails).map(() => '?').join(',')}) AND role != 'deleted'`
         ).bind(...Array.from(superAdminEmails)).all<{ id: UserId; email: string | null }>()
         : { results: [] };
 
@@ -1317,9 +1338,11 @@ auth.delete('/api/me/mcp-clients', requireAuthAllowBanned, async (c) => {
 auth.delete('/api/me/account', requireAuth, async (c) => {
     const user = c.get('user')!;
     const identities = await listUserIdentities(c.env.DB, user.id);
+    const superAdminEmails = getSuperAdmins(c.env);
     const decision = getAccountDeletionDecision(
         identities.length,
         await isLastActiveSuperAdmin(c, user.id),
+        identities.some(identity => isSuperAdminEmail(identity.provider_email, superAdminEmails)),
     );
     if (decision !== 'allowed') {
         return c.json({ error: '현재 상태에서는 탈퇴할 수 없습니다.', code: decision }, 409);
