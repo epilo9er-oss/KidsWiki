@@ -30,12 +30,12 @@ export async function collectPageEditWatchers(
     db: D1Database,
     pageId: number,
     slug: string,
-    editorId: number,
+    editorId: string,
     categories: string[],
     isPrivate: boolean,
     env: Env['Bindings'],
     rbac: RBAC,
-): Promise<number[]> {
+): Promise<string[]> {
     const parents: string[] = [];
     const parts = slug.split('/');
     // 'A/B/C' → ['A', 'A/B'] (자기 자신 'A/B/C' 는 제외 — 직접 주시자 쿼리가 담당)
@@ -43,12 +43,12 @@ export async function collectPageEditWatchers(
         parents.push(parts.slice(0, i).join('/'));
     }
 
-    const userIds = new Set<number>();
+    const userIds = new Set<string>();
     try {
         const direct = await db
             .prepare('SELECT user_id FROM page_watches WHERE page_id = ? AND user_id != ?')
             .bind(pageId, editorId)
-            .all<{ user_id: number }>();
+            .all<{ user_id: string }>();
         for (const r of direct.results) userIds.add(r.user_id);
 
         if (parents.length > 0) {
@@ -63,7 +63,7 @@ export async function collectPageEditWatchers(
                        AND p.slug IN (${placeholders})`,
                 )
                 .bind(editorId, ...parents)
-                .all<{ user_id: number }>();
+                .all<{ user_id: string }>();
             for (const r of subtree.results) userIds.add(r.user_id);
         }
 
@@ -76,7 +76,7 @@ export async function collectPageEditWatchers(
                      WHERE user_id != ? AND category IN (${placeholders})`,
                 )
                 .bind(editorId, ...categories)
-                .all<{ user_id: number }>();
+                .all<{ user_id: string }>();
             for (const r of cat.results) userIds.add(r.user_id);
         }
     } catch (e) {
@@ -98,7 +98,7 @@ export async function collectPageEditWatchers(
                  WHERE u.id IN (${placeholders})`,
             )
             .bind(...ids)
-            .all<{ id: number; email: string; role: string }>();
+            .all<{ id: string; email: string; role: string }>();
         // super_admin 이메일 보정 (DB role 값과 별도로 운영자가 .env 로 격상한 경우)
         enrichRoles(rows.results as any[], 'role', 'email', env);
         return rows.results
@@ -120,7 +120,7 @@ export function notifyPageWatchers(
     args: {
         pageId: number;
         slug: string;
-        editorId: number;
+        editorId: string;
         editorName: string;
         categories: string[];
         isPrivate: boolean;

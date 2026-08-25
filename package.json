@@ -24,6 +24,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:client": "tsc --noEmit -p tsconfig.client.json",
     "test:rag": "node --test scripts/rag.test.mjs",
+    "test:auth": "node --test scripts/auth-identities.test.mjs",
     "generate:rules": "node scripts/generate-rules.mjs",
     "preview:config": "node scripts/make-preview-config.mjs",
     "preview:init": "npm run test:preview-config && npm run preview:config && wrangler deploy -c wrangler.preview.toml",

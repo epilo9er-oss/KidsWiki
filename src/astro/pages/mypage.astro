@@ -418,6 +418,13 @@ import Footer from '../components/Footer.astro';
                         <div id="nameChangeStatus" class="mt-2" style="display:none;"></div>
                     </div>
                     <div class="mb-3">
+                        <label class="form-label fw-bold">로그인 계정</label>
+                        <div id="authIdentitiesList" class="d-flex flex-column gap-2">
+                            <div class="text-muted small">연결된 계정을 불러오는 중...</div>
+                        </div>
+                        <small class="text-muted d-block mt-2">같은 이메일이어도 자동으로 합치지 않습니다. 현재 계정에 로그인한 상태에서 새 공급자를 직접 인증해야 연결됩니다.</small>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label fw-bold">프로필 사진</label>
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" role="switch" id="picturePrivateToggle" onchange="togglePicturePrivacy(this)">

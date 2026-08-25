@@ -64,7 +64,7 @@ export function signupRejected(args: {
 }
 
 export function userJoined(args: {
-    user: { id: number; name: string; picture?: string | null };
+    user: { id: string; name: string; picture?: string | null };
     env: Env['Bindings'];
 }): WebhookEvent {
     const { user, env } = args;

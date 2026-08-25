@@ -25,6 +25,8 @@ npm run setup:local
 npm run dev:local
 ```
 
+숫자형 사용자 ID를 쓰던 로컬 상태에서 새 Base58 사용자 ID 스키마로 전환할 때는 `.wrangler/state`를 한 번 지운 뒤 `npm run setup:local`을 다시 실행한다. 이 작업은 로컬 D1·KV·R2 테스트 데이터 전체를 지우므로 필요한 자료가 없는 개발 환경에서만 한다.
+
 AI Search는 로컬 시뮬레이션 대신 원격 프록시를 사용한다. 일반 로컬 테스트에서는 `[[ai_search]]` 블록을 주석 처리하고 `RAG_SEARCH_ENABLED = "false"`를 유지한다. 로컬 Worker에서 실제 AI Search를 시험할 때만 바인딩에 `remote = true`를 추가한다.
 
 `--local` D1은 프로덕션과 분리되고, D1은 Cloudflare가 운영하는 것과 같은 버전으로 로컬 개발을 지원한다. 새 로컬 리소스는 비어 있으므로 위 스키마 명령을 최초 한 번 실행해야 하며, 이후 로컬 데이터는 기본적으로 `wrangler dev` 실행 사이에도 유지된다. `.wrangler/state`를 지웠다면 다시 실행한다. ([Cloudflare: Adding local data](https://developers.cloudflare.com/workers/local-development/local-data/), [Cloudflare: D1 local development](https://developers.cloudflare.com/d1/best-practices/local-development/))
@@ -47,7 +49,7 @@ AI Search는 로컬 시뮬레이션 대신 원격 프록시를 사용한다. 일
 
 `.dev.vars`는 앱을 띄우기 위한 공통 필수 파일이 아니라, 로컬에서 비밀값이 필요한 기능을 시험할 때만 만든다. Cloudflare는 로컬 secret을 설정 파일과 같은 디렉터리의 `.dev.vars` 또는 `.env` 중 하나에 두도록 안내한다. ([Cloudflare: Local secrets](https://developers.cloudflare.com/workers/local-development/environment-variables/#local-development-with-secrets))
 
-- Google/Discord OAuth: `GOOGLE_CLIENT_SECRET`, `DISCORD_CLIENT_SECRET`
+- OAuth: `GOOGLE_CLIENT_SECRET`, `DISCORD_CLIENT_SECRET`, `NAVER_CLIENT_SECRET`, 선택적 `KAKAO_CLIENT_SECRET`
 - Turnstile 서버 검증: `TURNSTILE_SECRET_KEY`
 - 실제 Analytics Engine 통계 조회: `CF_ACCOUNT_ID`, `CF_API_TOKEN`
 - Discord 알림: `DISCORD_ADMIN_WEBHOOK_URL`, `DISCORD_COMMUNITY_WEBHOOK_URL`

@@ -60,7 +60,7 @@ export async function resolveBearerAuth(c: Context<Env>): Promise<BearerAuthResu
     await ensureMcpInstantApplyMigration(c.env.DB);
 
     let userRow: {
-        uid: number; provider: string; provider_uid: string; email: string;
+        uid: string; provider: string; provider_uid: string; email: string;
         name: string; picture: string | null; picture_private: number; mcp_instant_apply: number; role: string; banned_until: number | null;
         last_namechange: number | null; created_at: number;
     } | null = null;
@@ -82,8 +82,8 @@ export async function resolveBearerAuth(c: Context<Env>): Promise<BearerAuthResu
                 )
                 .bind(tokenHash)
                 .first<{
-                    user_id: number; expires_at: number;
-                    uid: number; provider: string; provider_uid: string; email: string; name: string; picture: string | null; picture_private: number; mcp_instant_apply: number;
+                    user_id: string; expires_at: number;
+                    uid: string; provider: string; provider_uid: string; email: string; name: string; picture: string | null; picture_private: number; mcp_instant_apply: number;
                     role: string; banned_until: number | null; last_namechange: number | null; created_at: number;
                 }>();
 
@@ -112,8 +112,8 @@ export async function resolveBearerAuth(c: Context<Env>): Promise<BearerAuthResu
             )
             .bind(tokenHash)
             .first<{
-                id: number; user_id: number; scope: string | null; access_expires_at: number; revoked_at: number | null;
-                uid: number; provider: string; provider_uid: string; email: string; name: string; picture: string | null; picture_private: number; mcp_instant_apply: number;
+                id: number; user_id: string; scope: string | null; access_expires_at: number; revoked_at: number | null;
+                uid: string; provider: string; provider_uid: string; email: string; name: string; picture: string | null; picture_private: number; mcp_instant_apply: number;
                 role: string; banned_until: number | null; last_namechange: number | null; created_at: number;
             }>();
 

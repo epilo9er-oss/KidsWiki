@@ -20,10 +20,10 @@ function chunk<T>(arr: T[], size: number): T[][] {
 async function fetchRolesForUsers(
     db: D1Database,
     env: Env['Bindings'],
-    userIds: number[],
-): Promise<Array<{ id: number; role: string }>> {
+    userIds: string[],
+): Promise<Array<{ id: string; role: string }>> {
     if (userIds.length === 0) return [];
-    const out: Array<{ id: number; role: string }> = [];
+    const out: Array<{ id: string; role: string }> = [];
     for (const batch of chunk(userIds, D1_BIND_LIMIT)) {
         const placeholders = batch.map(() => '?').join(',');
         const rows = await db
@@ -33,7 +33,7 @@ async function fetchRolesForUsers(
                  WHERE u.id IN (${placeholders})`,
             )
             .bind(...batch)
-            .all<{ id: number; email: string; role: string }>();
+            .all<{ id: string; email: string; role: string }>();
         enrichRoles(rows.results as any[], 'role', 'email', env);
         for (const r of rows.results) out.push({ id: r.id, role: r.role });
     }
@@ -62,7 +62,7 @@ export async function cleanupUnauthorizedSubscriptions(
         const watchUsers = await db
             .prepare('SELECT user_id FROM page_watches WHERE page_id = ?')
             .bind(pageId)
-            .all<{ user_id: number }>();
+            .all<{ user_id: string }>();
         const muteUsers = await db
             .prepare(
                 `SELECT DISTINCT dm.user_id
@@ -71,9 +71,9 @@ export async function cleanupUnauthorizedSubscriptions(
                  WHERE d.page_id = ?`,
             )
             .bind(pageId)
-            .all<{ user_id: number }>();
+            .all<{ user_id: string }>();
 
-        const userIds = new Set<number>();
+        const userIds = new Set<string>();
         for (const r of watchUsers.results) userIds.add(r.user_id);
         for (const r of muteUsers.results) userIds.add(r.user_id);
         if (userIds.size === 0) return;
@@ -143,9 +143,9 @@ export async function filterAuthorizedUserIds(
     db: D1Database,
     env: Env['Bindings'],
     rbac: RBAC,
-    userIds: number[],
+    userIds: string[],
     permission: string,
-): Promise<number[]> {
+): Promise<string[]> {
     if (userIds.length === 0) return [];
     try {
         const roleRows = await fetchRolesForUsers(db, env, userIds);

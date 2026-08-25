@@ -35,8 +35,10 @@ import { renderUserAvatar } from '../utils/avatar';
             loadMcpClients();
             loadMcpApiKey();
             loadMcpSubmissions();
+            loadAuthIdentities();
             checkNameChangeStatus();
             showPictureUpdateResult();
+            showIdentityUpdateResult();
 
             // URL hash #mcp-submissions 가 있으면 섹션이 렌더된 뒤 스크롤.
             // 제출안이 없으면 섹션은 끝까지 hidden 으로 남으므로 무한 retry 가 되지 않게 횟수를 제한한다.
@@ -95,6 +97,118 @@ import { renderUserAvatar } from '../utils/avatar';
                 icon: 'error',
                 title: '프로필 사진 갱신 실패',
                 text: errorMessages[error] || '알 수 없는 오류가 발생했습니다.',
+            });
+        }
+
+        function showIdentityUpdateResult() {
+            const params = new URLSearchParams(window.location.search);
+            const linked = params.get('identity_linked');
+            const error = params.get('identity_error');
+            if (!linked && !error) return;
+
+            window.history.replaceState({}, '', window.location.pathname + window.location.hash);
+            if (linked) {
+                Swal.fire({
+                    icon: 'success',
+                    title: '로그인 계정이 연결되었습니다.',
+                    toast: true,
+                    position: 'top-end',
+                    showConfirmButton: false,
+                    timer: 1800,
+                });
+                return;
+            }
+
+            const messages = {
+                session_mismatch: '로그인 세션이 바뀌었습니다. 다시 시도해주세요.',
+                provider_not_enabled: '현재 비활성화된 로그인 공급자입니다.',
+                provider_already_linked: '해당 공급자의 로그인 계정이 이미 연결되어 있습니다.',
+                identity_in_use: '이 로그인 계정은 이미 다른 사용자에게 연결되어 있습니다.',
+                user_not_found: '사용자 계정을 찾을 수 없습니다.',
+            };
+            Swal.fire('계정 연결 실패', messages[error] || '로그인 계정을 연결하지 못했습니다.', 'error');
+        }
+
+        async function loadAuthIdentities() {
+            const container = document.getElementById('authIdentitiesList');
+            if (!container) return;
+            try {
+                const res = await fetch('/api/me/identities');
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || '불러오기 실패');
+
+                const linked = new Set((data.identities || []).map(identity => identity.provider));
+                const rows = (data.identities || []).map(identity => `
+                    <div class="d-flex align-items-center justify-content-between gap-2 rounded border px-3 py-2">
+                        <div class="min-w-0">
+                            <strong>${window.escapeHtml(identity.label)}</strong>
+                            ${identity.primary ? '<span class="badge bg-primary ms-1">기본</span>' : '<span class="badge bg-secondary ms-1">연결됨</span>'}
+                            ${identity.provider_email ? `<div class="text-muted small text-truncate">${window.escapeHtml(identity.provider_email)}</div>` : ''}
+                        </div>
+                        ${identity.primary ? '' : `<button type="button" class="btn btn-sm btn-outline-danger" data-identity-unlink="${window.escapeHtml(identity.provider)}">연결 해제</button>`}
+                    </div>
+                `);
+
+                for (const provider of data.available || []) {
+                    if (linked.has(provider.name)) continue;
+                    rows.push(`
+                        <div class="d-flex align-items-center justify-content-between gap-2 rounded border px-3 py-2">
+                            <strong>${window.escapeHtml(provider.label)}</strong>
+                            <button type="button" class="btn btn-sm btn-wiki-outline" data-identity-link="${window.escapeHtml(provider.name)}">연결</button>
+                        </div>
+                    `);
+                }
+                container.innerHTML = rows.join('') || '<div class="text-muted small">사용 가능한 로그인 공급자가 없습니다.</div>';
+                container.querySelectorAll('[data-identity-link]').forEach(button => {
+                    button.addEventListener('click', () => linkAuthIdentity(button.dataset.identityLink));
+                });
+                container.querySelectorAll('[data-identity-unlink]').forEach(button => {
+                    button.addEventListener('click', () => unlinkAuthIdentity(button.dataset.identityUnlink));
+                });
+            } catch (error) {
+                container.innerHTML = '<div class="text-danger small">로그인 계정 정보를 불러오지 못했습니다.</div>';
+            }
+        }
+
+        async function linkAuthIdentity(provider) {
+            if (!provider) return;
+            const result = await Swal.fire({
+                icon: 'question',
+                title: '로그인 계정 연결',
+                text: '새 공급자 계정으로 로그인해 현재 계정에 연결합니다.',
+                showCancelButton: true,
+                confirmButtonText: '계속',
+                cancelButtonText: '취소',
+            });
+            if (result.isConfirmed) window.location.href = `/auth/${encodeURIComponent(provider)}/link`;
+        }
+
+        async function unlinkAuthIdentity(provider) {
+            if (!provider) return;
+            const result = await Swal.fire({
+                icon: 'warning',
+                title: '연결을 해제할까요?',
+                text: '해제한 공급자로는 이 계정에 로그인할 수 없습니다.',
+                showCancelButton: true,
+                confirmButtonText: '연결 해제',
+                cancelButtonText: '취소',
+            });
+            if (!result.isConfirmed) return;
+
+            const res = await fetch(`/api/me/identities/${encodeURIComponent(provider)}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok) {
+                Swal.fire('연결 해제 실패', data.error || '다시 시도해주세요.', 'error');
+                return;
+            }
+            await loadAuthIdentities();
+            Swal.fire({
+                icon: 'success',
+                title: '연결을 해제했습니다.',
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 1500,
             });
         }
 

@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import type { Env } from '../../../types';
 import type { OAuthProvider, OAuthCallbackResult, OAuthStateData } from './base';
+import { consumeOAuthState, createOAuthState } from './state';
 
 export const discordProvider: OAuthProvider = {
     name: 'discord',
@@ -11,21 +12,7 @@ export const discordProvider: OAuthProvider = {
             return c.redirect('/?error=oauth_not_configured&provider=discord');
         }
 
-        const rawRedirect = c.req.query('redirect');
-        const safeRedirectUrl = (rawRedirect && rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') && !/[\x00-\x1f\x7f]/.test(rawRedirect))
-            ? rawRedirect
-            : undefined;
-
-        const state = crypto.randomUUID();
-        const payload: OAuthStateData = {
-            provider: 'discord',
-            intent: stateData?.intent ?? 'login',
-            userId: stateData?.userId,
-            expectedUid: stateData?.expectedUid,
-            redirectUrl: stateData?.redirectUrl ?? safeRedirectUrl,
-            remember: stateData?.remember ?? (c.req.query('remember') === '1'),
-        };
-        await c.env.KV.put(`oauth_state:${state}`, JSON.stringify(payload), { expirationTtl: 300 });
+        const state = await createOAuthState(c, 'discord', stateData);
 
         const params = new URLSearchParams({
             client_id: c.env.DISCORD_CLIENT_ID,
@@ -40,34 +27,8 @@ export const discordProvider: OAuthProvider = {
 
     async handleCallback(c: Context<Env>): Promise<OAuthCallbackResult | Response> {
         const code = c.req.query('code');
-        const state = c.req.query('state');
-
-        // CSRF 검증
-        if (!state) {
-            return c.redirect('/error?reason=' + encodeURIComponent('로그인 요청이 올바르지 않습니다. 다시 시도해주세요.'));
-        }
-        const storedRaw = await c.env.KV.get(`oauth_state:${state}`);
-        if (!storedRaw) {
-            return c.redirect('/error?reason=' + encodeURIComponent('로그인 세션이 만료되었거나 유효하지 않습니다. 다시 시도해주세요.'));
-        }
-
-        // 구 포맷(단순 'discord' 문자열) 폴백: 배포 전환 시점에 이미 진행 중이던 로그인 호환용
-        let stateData: OAuthStateData;
-        if (storedRaw === 'discord') {
-            stateData = { provider: 'discord', intent: 'login' };
-        } else {
-            try {
-                stateData = JSON.parse(storedRaw) as OAuthStateData;
-            } catch {
-                await c.env.KV.delete(`oauth_state:${state}`);
-                return c.redirect('/error?reason=' + encodeURIComponent('로그인 세션이 올바르지 않습니다. 다시 시도해주세요.'));
-            }
-        }
-        if (stateData.provider !== 'discord') {
-            await c.env.KV.delete(`oauth_state:${state}`);
-            return c.redirect('/error?reason=' + encodeURIComponent('로그인 세션이 유효하지 않습니다. 다시 시도해주세요.'));
-        }
-        await c.env.KV.delete(`oauth_state:${state}`);
+        const stateData = await consumeOAuthState(c, 'discord');
+        if (stateData instanceof Response) return stateData;
 
         if (!code) {
             return c.redirect('/?error=auth_missing_code&provider=discord');

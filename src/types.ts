@@ -24,13 +24,19 @@ export type Env = {
         ADMIN_JOB_DO?: DurableObjectNamespace;
         // AdminJobDO alarm 틱당 서브리퀘스트 예산 (유료 950 / 무료 40 권장, 미설정 시 40)
         JOB_SUBREQUEST_BUDGET?: string;
-        AUTH_PROVIDERS: string;            // "google,discord"
+        AUTH_PROVIDERS: string;            // "google,discord,naver,kakao"
         GOOGLE_CLIENT_ID: string;
         GOOGLE_CLIENT_SECRET: string;
         GOOGLE_REDIRECT_URI: string;
         DISCORD_CLIENT_ID: string;
         DISCORD_CLIENT_SECRET: string;
         DISCORD_REDIRECT_URI: string;
+        NAVER_CLIENT_ID?: string;
+        NAVER_CLIENT_SECRET?: string;
+        NAVER_REDIRECT_URI?: string;
+        KAKAO_CLIENT_ID?: string;
+        KAKAO_CLIENT_SECRET?: string;
+        KAKAO_REDIRECT_URI?: string;
         MEDIA_PUBLIC_URL: string;
         MAX_UPLOAD_SIZE: string;
         SUPER_ADMIN_EMAILS: string;

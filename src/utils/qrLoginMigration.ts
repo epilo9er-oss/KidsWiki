@@ -31,7 +31,7 @@ export async function ensureQrLoginMigration(db: D1Database): Promise<void> {
                         secret_hash      TEXT NOT NULL,
                         status           TEXT NOT NULL DEFAULT 'pending',
                         guest_ua         TEXT,
-                        approved_user_id INTEGER,
+                        approved_user_id TEXT,
                         created_at       INTEGER NOT NULL DEFAULT (unixepoch()),
                         expires_at       INTEGER NOT NULL,
                         approved_at      INTEGER,

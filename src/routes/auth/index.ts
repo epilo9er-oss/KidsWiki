@@ -7,7 +7,9 @@ import { getSuperAdmins, isSuperAdmin, PRIVATE_AVATAR_PATH } from '../../utils/a
 import type { OAuthProvider, OAuthProfile, OAuthStateData } from './providers/base';
 import { googleProvider } from './providers/google';
 import { discordProvider } from './providers/discord';
-import { handleOAuthLogin } from './common';
+import { naverProvider } from './providers/naver';
+import { kakaoProvider } from './providers/kakao';
+import { handleOAuthLink, handleOAuthLogin, handlePendingIdentityLink } from './common';
 import type { RBAC } from '../../utils/role';
 import { enrichRole } from '../../utils/role';
 import type { AuthProvidersResponse } from '../../shared/api/auth';
@@ -16,6 +18,8 @@ import { signupPending } from '../../utils/webhook/events/signup';
 import { createNotification } from '../../utils/notification';
 import { sha256Hex } from '../../utils/oauth';
 import { ensureMcpInstantApplyMigration } from '../../utils/mcpInstantApplyMigration';
+import { ensureUserIdentities, findUserByIdentity, hasProviderIdentity, listUserIdentities, parsePendingIdentityLink, unlinkSecondaryIdentity } from './identities';
+import { isUserId, type UserId } from '../../shared/userId';
 
 const auth = new Hono<Env>();
 
@@ -23,6 +27,8 @@ const auth = new Hono<Env>();
 const providerRegistry: Record<string, OAuthProvider> = {
     google: googleProvider,
     discord: discordProvider,
+    naver: naverProvider,
+    kakao: kakaoProvider,
 };
 
 /**
@@ -43,7 +49,44 @@ for (const [name, provider] of Object.entries(providerRegistry)) {
         if (!active.includes(name)) {
             return c.json({ error: 'This auth provider is not enabled' }, 404);
         }
+
+        const pendingLinkToken = c.req.query('link_token');
+        if (pendingLinkToken) {
+            if (!/^[0-9a-f-]{36}$/i.test(pendingLinkToken)) {
+                return c.redirect('/?error=invalid_link_request');
+            }
+            const raw = await c.env.KV.get(`pending_identity_link:${pendingLinkToken}`);
+            if (!raw) return c.redirect('/?error=link_request_expired');
+            const pending = parsePendingIdentityLink(raw);
+            if (!pending) return c.redirect('/?error=invalid_link_request');
+            if (!pending.browserNonce || getCookie(c, 'oauth_link_nonce') !== pending.browserNonce) {
+                return c.redirect('/?error=invalid_link_request');
+            }
+            const target = await c.env.DB.prepare("SELECT provider FROM users WHERE id = ? AND role != 'deleted'")
+                .bind(pending.targetUserId)
+                .first<{ provider: string }>();
+            if (!target || target.provider !== name) {
+                return c.redirect('/?error=invalid_link_request');
+            }
+            return provider.handleLogin(c, {
+                intent: 'confirm_link',
+                pendingLinkToken,
+                remember: !!pending.remember,
+            });
+        }
         return provider.handleLogin(c);
+    });
+
+    auth.get(`/auth/${name}/link`, requireAuth, async (c) => {
+        const active = parseProviders(c.env.AUTH_PROVIDERS);
+        if (!active.includes(name)) {
+            return c.redirect('/mypage?identity_error=provider_not_enabled');
+        }
+        const user = c.get('user')!;
+        if (await hasProviderIdentity(c.env.DB, user.id, name)) {
+            return c.redirect('/mypage?identity_error=provider_already_linked');
+        }
+        return provider.handleLogin(c, { intent: 'link', userId: user.id });
     });
 
     auth.get(`/auth/${name}/callback`, async (c) => {
@@ -56,6 +99,12 @@ for (const [name, provider] of Object.entries(providerRegistry)) {
 
         if (result.state.intent === 'refresh_picture') {
             return handleRefreshPicture(c, result.profile, result.state);
+        }
+        if (result.state.intent === 'link') {
+            return handleOAuthLink(c, result.profile, result.state);
+        }
+        if (result.state.intent === 'confirm_link') {
+            return handlePendingIdentityLink(c, result.profile, result.state);
         }
         return handleOAuthLogin(c, result.profile, result.state.redirectUrl, result.state.remember);
     });
@@ -116,7 +165,7 @@ async function handleRefreshPicture(
     const userRow = await db
         .prepare('SELECT id, provider, uid, role, picture_private FROM users WHERE id = ?')
         .bind(stateData.userId)
-        .first<{ id: number; provider: string; uid: string; role: string; picture_private: number }>();
+        .first<{ id: UserId; provider: string; uid: string; role: string; picture_private: number }>();
 
     if (!userRow || userRow.role === 'deleted') {
         return c.redirect('/mypage?picture_error=user_not_found');
@@ -159,6 +208,31 @@ auth.get('/api/auth/providers', (c) => {
     return c.json<AuthProvidersResponse>({ providers });
 });
 
+/** 현재 계정의 연결된 로그인 수단과 추가로 연결 가능한 활성 공급자. */
+auth.get('/api/me/identities', requireAuth, async (c) => {
+    const user = c.get('user')!;
+    const active = parseProviders(c.env.AUTH_PROVIDERS).filter(name => providerRegistry[name]);
+    const identities = await listUserIdentities(c.env.DB, user.id);
+    return c.json({
+        identities: identities.map(identity => ({
+            ...identity,
+            label: providerRegistry[identity.provider]?.label || identity.provider,
+        })),
+        available: active.map(name => ({ name, label: providerRegistry[name].label })),
+    });
+});
+
+/** 기본 로그인 수단은 유지하고 연결된 보조 OAuth identity만 해제한다. */
+auth.delete('/api/me/identities/:provider', requireAuth, async (c) => {
+    const provider = c.req.param('provider').trim().toLowerCase();
+    if (!providerRegistry[provider]) return c.json({ error: '알 수 없는 로그인 공급자입니다.' }, 400);
+
+    const result = await unlinkSecondaryIdentity(c.env.DB, c.get('user')!.id, provider);
+    if (result === 'primary') return c.json({ error: '기본 로그인 수단은 연결 해제할 수 없습니다.' }, 400);
+    if (result === 'not_found') return c.json({ error: '연결된 로그인 수단이 아닙니다.' }, 404);
+    return c.json({ success: true });
+});
+
 /**
  * POST /api/auth/signup-request
  * 승인제 회원가입 신청 제출 (비인증 상태에서 임시 토큰으로 처리)
@@ -195,6 +269,11 @@ auth.post('/api/auth/signup-request', async (c) => {
         name: string;
         picture: string;
     };
+
+    if (await findUserByIdentity(db, userInfo.provider, userInfo.uid)) {
+        await c.env.KV.delete(`signup_token:${token}`);
+        return c.json({ error: '이미 가입되거나 다른 계정에 연결된 로그인 수단입니다.' }, 409);
+    }
 
     // 중복 이름 확인
     const dupCheck = await db
@@ -243,17 +322,17 @@ auth.post('/api/auth/signup-request', async (c) => {
     // 모든 관리자에게 알림 발송
     const admins = await db.prepare(
         "SELECT id, email FROM users WHERE role = 'admin' AND role != 'deleted'"
-    ).all<{ id: number; email: string }>();
+    ).all<{ id: UserId; email: string }>();
 
     const superAdminEmails = getSuperAdmins(c.env);
     const superAdminUsers = superAdminEmails.size > 0
         ? await db.prepare(
             `SELECT id, email FROM users WHERE email IN (${Array.from(superAdminEmails).map(() => '?').join(',')}) AND role != 'deleted'`
-        ).bind(...Array.from(superAdminEmails)).all<{ id: number; email: string }>()
+        ).bind(...Array.from(superAdminEmails)).all<{ id: UserId; email: string }>()
         : { results: [] };
 
     // 중복 제거하여 알림 대상 수집
-    const notifyUserIds = new Set<number>();
+    const notifyUserIds = new Set<UserId>();
     for (const admin of admins.results || []) {
         notifyUserIds.add(admin.id);
     }
@@ -626,8 +705,8 @@ auth.get('/api/me/watches', requireAuth, async (c) => {
  * 특정 유저의 공개 프로필 정보 반환
  */
 auth.get('/api/users/:id/profile', async (c) => {
-    const userId = parseInt(c.req.param('id'));
-    if (isNaN(userId)) {
+    const userId = c.req.param('id');
+    if (!isUserId(userId)) {
         return c.json({ error: '유효하지 않은 사용자 ID입니다.' }, 400);
     }
 
@@ -640,7 +719,7 @@ auth.get('/api/users/:id/profile', async (c) => {
         const adminUser = await db
             .prepare('SELECT id, name, picture, role, banned_until, email, created_at FROM users WHERE id = ?')
             .bind(userId)
-            .first<{ id: number; name: string; picture: string; role: string; banned_until: number | null; email: string; created_at: number }>();
+            .first<{ id: UserId; name: string; picture: string; role: string; banned_until: number | null; email: string; created_at: number }>();
         if (!adminUser || adminUser.role === 'deleted') {
             return c.json({ error: '사용자를 찾을 수 없습니다.' }, 404);
         }
@@ -666,7 +745,7 @@ auth.get('/api/users/:id/profile', async (c) => {
     const user = await db
         .prepare('SELECT id, name, picture, role, email, created_at FROM users WHERE id = ?')
         .bind(userId)
-        .first<{ id: number; name: string; picture: string; role: string; email: string; created_at: number }>();
+        .first<{ id: UserId; name: string; picture: string; role: string; email: string; created_at: number }>();
 
     if (!user || user.role === 'deleted') {
         return c.json({ error: '사용자를 찾을 수 없습니다.' }, 404);
@@ -690,8 +769,8 @@ auth.get('/api/users/:id/profile', async (c) => {
  * 특정 유저의 편집(리비전) 내역 반환 (페이징: offset/limit)
  */
 auth.get('/api/users/:id/contributions', async (c) => {
-    const userId = parseInt(c.req.param('id'));
-    if (isNaN(userId)) {
+    const userId = c.req.param('id');
+    if (!isUserId(userId)) {
         return c.json({ error: '유효하지 않은 사용자 ID입니다.' }, 400);
     }
 
@@ -952,11 +1031,13 @@ auth.delete('/api/me/mcp-clients', requireAuthAllowBanned, async (c) => {
  * DELETE /api/me/account
  * 회원탈퇴: role을 'deleted'로, 표시명을 '탈퇴한 사용자'로 변경하고 세션 삭제
  * 모든 OAuth 토큰을 revoke하고 MCP API 키를 삭제하여 잔존 토큰을 즉시 무효화한다.
- * provider + uid는 유지하여 재가입 차단
+ * 연결된 모든 provider + uid는 유지하여 재가입을 차단하되 공급자 이메일은 제거한다.
  */
 auth.delete('/api/me/account', requireAuth, async (c) => {
     const user = c.get('user')!;
     const db = c.env.DB;
+
+    await ensureUserIdentities(db);
 
     // 1. role을 'deleted'로, 이름을 '탈퇴한 사용자'로, picture 제거
     //    email은 UNIQUE 제약이 있으므로 id 기반의 유일한 placeholder로 설정
@@ -964,6 +1045,7 @@ auth.delete('/api/me/account', requireAuth, async (c) => {
     await db.prepare(
         `UPDATE users SET role = 'deleted', name = '탈퇴한 사용자', picture = NULL, email = 'deleted:' || id WHERE id = ?`
     ).bind(user.id).run();
+    await db.prepare('UPDATE user_identities SET provider_email = NULL WHERE user_id = ?').bind(user.id).run();
 
     // 2. 해당 유저의 모든 세션 삭제
     await db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id).run();

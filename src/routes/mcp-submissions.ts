@@ -42,7 +42,7 @@ mcpSubmissionsRoutes.use('/mcp-submissions/*', async (c, next) => {
 
 interface DraftRow {
     id: number;
-    user_id: number;
+    user_id: string;
     slug: string;
     action: string;
     base_revision_id: number | null;

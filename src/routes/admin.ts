@@ -60,13 +60,14 @@ import type {
     AnnouncementReorderRequest,
     AnnouncementMoveRequest,
 } from '../shared/api/announcement';
+import { createUserWithIdentity, findUserByIdentity } from './auth/identities';
 
 const adminRoutes = new Hono<Env>();
 
 adminRoutes.use('*', requireAdmin);
 
 // ── 관리 로그 기록 헬퍼 ──
-export function writeAdminLog(c: any, type: string, log: string, userId: number) {
+export function writeAdminLog(c: any, type: string, log: string, userId: string) {
     const db = c.env.DB;
     c.executionCtx.waitUntil(
         db.prepare('INSERT INTO admin_log (type, log, user) VALUES (?, ?, ?)')
@@ -209,7 +210,7 @@ adminRoutes.put('/users/:id/role', async (c) => {
     );
 
     // Discord admin 채널에 권한 변경 알림 (자기 자신 변경 / no-op 은 제외)
-    if (Number(targetUserId) !== currentUser.id && oldRole !== role) {
+    if (targetUserId !== currentUser.id && oldRole !== role) {
         dispatchDiscord(c.env, c.executionCtx, userRoleChange({
             targetName: targetUser.name,
             oldRole,
@@ -267,7 +268,7 @@ adminRoutes.put('/users/:id/ban', async (c) => {
         try {
             const banContent = `관리자에 의해 ${days}일간 차단되었습니다.`;
             await createNotification(c.env, c.executionCtx, {
-                userId: Number(targetUserId),
+                userId: targetUserId,
                 type: 'banned',
                 content: banContent,
                 push: {
@@ -800,11 +801,14 @@ adminRoutes.put('/signup-requests/:id/approve', async (c) => {
 
     // 이메일 중복 체크 (다른 공급자로 이미 가입된 이메일)
     const emailDup = await db
-        .prepare('SELECT id FROM users WHERE email = ?')
+        .prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)')
         .bind(request.email)
-        .first<{ id: number }>();
+        .first<{ id: string }>();
     if (emailDup) {
         return c.json({ error: '이미 동일한 이메일로 가입된 사용자가 있습니다.' }, 409);
+    }
+    if (await findUserByIdentity(db, request.provider, request.uid)) {
+        return c.json({ error: '이미 가입되거나 다른 계정에 연결된 로그인 수단입니다.' }, 409);
     }
 
     // 중복 이름 확인
@@ -833,9 +837,14 @@ adminRoutes.put('/signup-requests/:id/approve', async (c) => {
     // users 테이블에 유저 생성
     // 가입 신청 시 사진 비공개를 선택했으면 picture 를 정적 기본 아바타로 박제한다.
     const approvedPicture = request.picture_private ? PRIVATE_AVATAR_PATH : request.picture;
-    const insertResult = await db.prepare(
-        'INSERT INTO users (provider, uid, email, name, picture, picture_private) VALUES (?, ?, ?, ?, ?, ?)'
-    ).bind(request.provider, request.uid, request.email, finalName, approvedPicture, request.picture_private ? 1 : 0).run();
+    const newUserId = await createUserWithIdentity(db, {
+        provider: request.provider,
+        uid: request.uid,
+        email: request.email,
+        name: finalName,
+        picture: approvedPicture,
+        picturePrivate: !!request.picture_private,
+    });
 
     // 신청 상태 업데이트
     const now = Math.floor(Date.now() / 1000);
@@ -849,8 +858,7 @@ adminRoutes.put('/signup-requests/:id/approve', async (c) => {
     ).bind(requestId).run();
 
     // Discord community 채널에 가입 완료 환영 알림
-    const newUserId = Number(insertResult.meta?.last_row_id ?? 0);
-    if (newUserId > 0) {
+    if (newUserId) {
         dispatchDiscord(c.env, c.executionCtx, userJoined({
             user: { id: newUserId, name: finalName, picture: approvedPicture },
             env: c.env,
@@ -1052,7 +1060,7 @@ const CATEGORY_ACL_BULK_MAX = 5000;
 async function clearCategoryAclRow(
     db: D1Database,
     name: string,
-    currentUserId: number,
+    currentUserId: string,
 ): Promise<void> {
     let hasLegacy = false;
     try {

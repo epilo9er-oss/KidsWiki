@@ -102,7 +102,7 @@ export function normalizeEditAcl(input: unknown): { value: EditAcl | null } | { 
 async function evaluateFlag(
     db: D1Database,
     flag: EditAclFlag,
-    user: { id: number; created_at: number },
+    user: { id: string; created_at: number },
     pageId: number | null,
     minAgeDays: number,
     isAdmin: boolean,
@@ -151,7 +151,7 @@ export interface EditAclEvaluation {
 export async function evaluateEditAcl(
     db: D1Database,
     acl: EditAcl,
-    user: { id: number; created_at: number },
+    user: { id: string; created_at: number },
     pageId: number | null,
     minAgeDays: number,
     isAdmin: boolean,
@@ -179,7 +179,7 @@ export async function evaluateEditAcl(
  */
 export async function isTrustedEditor(
     db: D1Database,
-    user: { id: number; created_at: number },
+    user: { id: string; created_at: number },
     pageId: number | null,
     minAgeDays: number,
     isAdmin: boolean,

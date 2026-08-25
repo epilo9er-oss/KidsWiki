@@ -171,7 +171,7 @@ async function holdPendingEdit(
                     "SELECT id FROM users WHERE (role = 'admin' OR role = 'super_admin') AND id != ?"
                 )
                 .bind(user.id)
-                .all<{ id: number }>();
+                .all<{ id: string }>();
             const adminIds = (results || []).map(r => r.id);
             if (adminIds.length === 0) return;
             // 검토는 문서 열람 페이지(편집 버튼 배지/드롭다운)에서 수행한다.
@@ -649,7 +649,7 @@ async function rewriteBacklinksForRename(
     c: any,
     oldSlug: string,
     newSlug: string,
-    user: { id: number; role: string },
+    user: { id: string; role: string },
     rbac: RBAC
 ): Promise<{ updated: string[]; skipped: string[]; conflicts: string[]; total: number }> {
     const db: D1Database = c.env.DB;
@@ -2885,7 +2885,7 @@ wiki.get('/w/:slug/revisions/:id', async (c) => {
        WHERE r.id = ? AND r.page_id = ?`
         )
         .bind(revId, page.id)
-        .first<{ id: number; page_id: number; page_version: number | null; content: string; r2_key: string | null; summary: string | null; author_id: number | null; created_at: number; deleted_at: number | null; purged_at: number | null; is_virtual: number; author_name: string | null }>();
+        .first<{ id: number; page_id: number; page_version: number | null; content: string; r2_key: string | null; summary: string | null; author_id: string | null; created_at: number; deleted_at: number | null; purged_at: number | null; is_virtual: number; author_name: string | null }>();
 
     if (!revision) {
         return c.json({ error: '리비전을 찾을 수 없습니다.' }, 404);
@@ -3368,7 +3368,7 @@ export async function movePage(
     c: any,
     currentSlug: string,
     newSlugRaw: string,
-    user: { id: number; role: string },
+    user: { id: string; role: string },
     rbac: RBAC,
     options?: { updateBacklinks?: boolean },
 ): Promise<MovePageOutcome> {

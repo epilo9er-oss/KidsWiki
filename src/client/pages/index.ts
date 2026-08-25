@@ -64,6 +64,28 @@ import { createTocController } from '../article/toc';
       const urlParams = new URLSearchParams(window.location.search);
       const errorParam = urlParams.get('error');
       const infoParam = urlParams.get('info');
+      if (infoParam === 'account_link_required') {
+        const provider = urlParams.get('provider') || '';
+        const candidate = urlParams.get('candidate') || '';
+        const linkToken = urlParams.get('link_token') || '';
+        const providerLabels = { google: 'Google', discord: 'Discord', naver: '네이버', kakao: '카카오' };
+        window.history.replaceState({}, '', '/');
+
+        if (providerLabels[provider] && providerLabels[candidate] && /^[0-9a-f-]{36}$/i.test(linkToken)) {
+          const result = await Swal.fire({
+            icon: 'question',
+            title: '기존 계정과 연결할까요?',
+            text: `같은 이메일의 기존 계정이 있습니다. ${providerLabels[provider]} 계정으로 다시 로그인하면 ${providerLabels[candidate]} 로그인을 안전하게 연결합니다.`,
+            showCancelButton: true,
+            confirmButtonText: `${providerLabels[provider]}로 확인`,
+            cancelButtonText: '취소',
+          });
+          if (result.isConfirmed) {
+            window.location.href = `/auth/${provider}?link_token=${encodeURIComponent(linkToken)}`;
+            return;
+          }
+        }
+      }
       if (errorParam || infoParam) {
         const messages = {
           'deleted_account': { icon: 'error', title: '접근 불가', text: '탈퇴한 계정입니다.' },
@@ -71,6 +93,14 @@ import { createTocController } from '../article/toc';
           'signup_blocked': { icon: 'error', title: '가입 차단', text: '가입이 차단된 계정입니다. 관리자에게 문의하세요.' },
           'email_domain_not_allowed': { icon: 'error', title: '가입 불가', text: '해당 이메일 도메인은 가입이 허용되지 않습니다.' },
           'signup_submitted': { icon: 'success', title: '가입 신청 완료', text: '가입 신청이 접수되었습니다. 관리자 승인 후 이용 가능합니다.' },
+          'account_linked': { icon: 'success', title: '계정 연결 완료', text: '새 로그인 수단이 기존 계정에 연결되었습니다.' },
+          'email_required': { icon: 'error', title: '이메일 동의 필요', text: '신규 가입에는 공급자에서 확인된 이메일 제공 동의가 필요합니다.' },
+          'email_already_registered': { icon: 'error', title: '계정 확인 필요', text: '같은 이메일 또는 공급자의 계정이 이미 등록되어 있습니다.' },
+          'invalid_link_request': { icon: 'error', title: '연결 요청 오류', text: '계정 연결 요청이 올바르지 않습니다. 다시 시도해주세요.' },
+          'link_request_expired': { icon: 'error', title: '연결 요청 만료', text: '계정 연결 요청이 만료되었습니다. 다시 로그인해주세요.' },
+          'account_link_reauth_failed': { icon: 'error', title: '계정 확인 실패', text: '기존 계정과 동일한 계정으로 다시 로그인해야 연결할 수 있습니다.' },
+          'identity_in_use': { icon: 'error', title: '연결 불가', text: '이 로그인 수단은 이미 다른 계정에 연결되어 있습니다.' },
+          'provider_already_linked': { icon: 'error', title: '연결 불가', text: '해당 공급자의 다른 로그인 계정이 이미 연결되어 있습니다.' },
         };
         const key = errorParam || infoParam;
         const msg = messages[key];

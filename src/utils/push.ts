@@ -116,7 +116,7 @@ async function sendToSubscriptions(
  */
 export async function pushToUser(
     env: Env['Bindings'],
-    userId: number,
+    userId: string,
     payload: PushPayload,
 ): Promise<void> {
     if (!isPushEnabled(env)) return;
@@ -151,7 +151,7 @@ export async function pushToSignupRequest(
 export async function promoteSignupSubscriptions(
     env: Env['Bindings'],
     signupRequestId: number,
-    userId: number,
+    userId: string,
 ): Promise<void> {
     try {
         await env.DB

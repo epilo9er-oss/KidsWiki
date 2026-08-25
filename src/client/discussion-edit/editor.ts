@@ -34,7 +34,7 @@ declare global {
 }
 
 export interface MentionCandidate {
-    id: number;
+    id: string;
     name: string;
     picture?: string | null;
 }

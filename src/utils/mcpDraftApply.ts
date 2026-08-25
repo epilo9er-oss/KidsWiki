@@ -508,7 +508,7 @@ export async function dispatchApplyEditTool(
         `SELECT id, user_id, slug, action, base_revision_id, base_version,
                 content, category, redirect_to, title, has_title_change, editor_note, submitted_at
          FROM mcp_drafts WHERE id = ?`
-    ).bind(draftId).first<ApplyDraftInput & { user_id: number; submitted_at: number | null }>();
+    ).bind(draftId).first<ApplyDraftInput & { user_id: string; submitted_at: number | null }>();
     if (!draft) {
         return toolError('Error: draft 를 찾을 수 없습니다 (이미 commit/discard 됐거나 12시간 TTL 만료).');
     }

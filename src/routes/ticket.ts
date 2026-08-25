@@ -38,7 +38,7 @@ const typeLabels: Record<string, string> = {
 };
 
 // ── 접근 권한 확인 헬퍼 ──
-function canAccessTicket(rbac: RBAC, user: { id: number; role: string }, ticket: { user_id: number; type: string; deleted_at: number | null }): boolean {
+function canAccessTicket(rbac: RBAC, user: { id: string; role: string }, ticket: { user_id: string; type: string; deleted_at: number | null }): boolean {
     // soft deleted → admin 이상만 (ticket:manage)
     if (ticket.deleted_at) {
         return rbac.can(user.role, 'ticket:manage');
@@ -57,7 +57,7 @@ function canAccessTicket(rbac: RBAC, user: { id: number; role: string }, ticket:
 function filterTicketMentionRecipients(
     rbac: RBAC,
     recipients: MentionRecipient[],
-    ticket: { user_id: number; type: string; deleted_at: number | null },
+    ticket: { user_id: string; type: string; deleted_at: number | null },
 ): MentionRecipient[] {
     return recipients.filter(r => canAccessTicket(rbac, { id: r.id, role: r.role }, ticket));
 }
@@ -196,7 +196,7 @@ ticketRoutes.post('/tickets', requireAuthAllowBanned, async (c) => {
         if (type === 'discussion') {
             adminQuery = `SELECT id FROM users WHERE role IN ('admin', 'super_admin', 'discussion_manager')`;
         }
-        const { results: admins } = await db.prepare(adminQuery).all<{ id: number }>();
+        const { results: admins } = await db.prepare(adminQuery).all<{ id: string }>();
 
         const link = `/tickets/${ticketId}`;
         const notifContent = `새 티켓 문의 [#${ticketId}] ${typeLabels[type]}: '${title.trim()}'`;
@@ -400,11 +400,11 @@ ticketRoutes.post('/tickets/:id/comments', requireAuthAllowBanned, async (c) => 
                 UNION
                 SELECT author_id FROM ticket_comments WHERE ticket_id = ? AND author_id IS NOT NULL AND deleted_at IS NULL
             ) WHERE author_id != ?
-        `).bind(ticketId, ticketId, user.id).all<{ author_id: number }>();
+        `).bind(ticketId, ticketId, user.id).all<{ author_id: string }>();
 
         // 참여자만 알림 (티켓 작성자 + 댓글 작성자)
         // 참여하지 않은 관리자는 티켓 생성 시 받은 알림만 수신
-        const allRecipients = new Set<number>();
+        const allRecipients = new Set<string>();
         participants.forEach(p => allRecipients.add(p.author_id));
 
         const link = `/tickets/${ticketId}`;

@@ -1,9 +1,22 @@
 import type { Context } from 'hono';
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { Env } from '../../types';
-import type { OAuthProfile } from './providers/base';
+import type { UserId } from '../../shared/userId';
+import type { OAuthProfile, OAuthStateData } from './providers/base';
 import { isEmailDomainAllowed } from '../../utils/auth';
 import { dispatchDiscord } from '../../utils/webhook/discord';
 import { userJoined } from '../../utils/webhook/events/signup';
+import {
+    createUserWithIdentity,
+    decideUnknownIdentity,
+    findUserByIdentity,
+    findUsersByEmail,
+    hasProviderIdentity,
+    linkIdentity,
+    parsePendingIdentityLink,
+    type PendingIdentityLink,
+    updateIdentityEmail,
+} from './identities';
 
 /**
  * OAuth 로그인 공통 처리:
@@ -19,59 +32,78 @@ import { userJoined } from '../../utils/webhook/events/signup';
 export const SESSION_TTL_REMEMBER = 60 * 60 * 24 * 365; // 1년
 export const SESSION_TTL_DEFAULT = 60 * 60 * 6; // 6시간
 
+const PENDING_IDENTITY_LINK_TTL = 600;
+
 export async function handleOAuthLogin(c: Context<Env>, profile: OAuthProfile, redirectUrl?: string, remember = false): Promise<Response> {
     const db = c.env.DB;
-
     let isNewUser = false;
+    let userId: UserId | null = null;
 
-    // 1. 기존 유저 확인 (provider + uid)
-    const existingUser = await db
-        .prepare('SELECT id, role FROM users WHERE provider = ? AND uid = ?')
-        .bind(profile.provider, profile.uid)
-        .first<{ id: number; role: string }>();
+    // OAuth 공급자의 불변 식별자로 로그인 계정을 찾는다. 이메일은 절대 로그인 키로 쓰지 않는다.
+    const existingUser = await findUserByIdentity(db, profile.provider, profile.uid);
 
     if (existingUser && existingUser.role === 'deleted') {
         return c.redirect('/?error=deleted_account');
     }
 
     if (existingUser) {
-        // 기존 유저: 이메일이 다른 계정과 충돌하는지 먼저 확인
-        const emailDup = await db
-            .prepare('SELECT provider FROM users WHERE email = ? AND (provider != ? OR uid != ?)')
-            .bind(profile.email, profile.provider, profile.uid)
-            .first<{ provider: string }>();
-        if (emailDup) {
-            return c.redirect(`/?error=email_already_registered&provider=${encodeURIComponent(emailDup.provider)}`);
-        }
+        userId = existingUser.id;
+        await updateIdentityEmail(db, profile.provider, profile.uid, profile.email);
 
-        // 기존 유저: 이름은 유지 (수동으로 변경한 이름이 로그인마다 초기화되지 않도록)
-        // picture_private=1 인 경우 공급자 사진으로 picture 를 덮어쓰지 않아 비공개 설정을 보존한다.
-        try {
+        // 대표 프로필 사진은 기본 로그인 수단으로 로그인했을 때만 갱신한다.
+        if (existingUser.provider === profile.provider && existingUser.uid === profile.uid) {
             await db
-                .prepare('UPDATE users SET email = ?, picture = CASE WHEN picture_private = 1 THEN picture ELSE ? END WHERE provider = ? AND uid = ?')
-                .bind(profile.email, profile.picture || null, profile.provider, profile.uid)
+                .prepare('UPDATE users SET picture = CASE WHEN picture_private = 1 THEN picture ELSE ? END WHERE id = ?')
+                .bind(profile.picture || null, existingUser.id)
                 .run();
-        } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            if (message.includes('UNIQUE constraint failed') || message.includes('users.email')) {
-                return c.redirect('/?error=email_already_registered');
-            }
-            throw error;
         }
     } else {
-        isNewUser = true;
+        const email = profile.email?.trim();
+        if (!email) {
+            return c.redirect(`/?error=email_required&provider=${encodeURIComponent(profile.provider)}`);
+        }
 
-        // 이메일 중복 체크 (다른 공급자로 이미 가입된 이메일)
-        const emailDup = await db
-            .prepare('SELECT provider FROM users WHERE email = ?')
-            .bind(profile.email)
-            .first<{ provider: string }>();
-        if (emailDup) {
-            return c.redirect(`/?error=email_already_registered&provider=${encodeURIComponent(emailDup.provider)}`);
+        // 같은 이메일은 연결 후보일 뿐이다. 기존 기본 공급자로 다시 인증하기 전에는 병합하지 않는다.
+        const emailUsers = await findUsersByEmail(db, email);
+        const targetHasProvider = emailUsers.length === 1
+            ? await hasProviderIdentity(db, emailUsers[0].id, profile.provider)
+            : false;
+        const decision = decideUnknownIdentity(emailUsers.length, targetHasProvider);
+        if (decision === 'require_reauthentication') {
+            const target = emailUsers[0];
+            const token = crypto.randomUUID();
+            const browserNonce = crypto.randomUUID();
+            const pending: PendingIdentityLink = {
+                targetUserId: target.id,
+                candidate: { provider: profile.provider, uid: profile.uid, email },
+                remember,
+                browserNonce,
+            };
+            await c.env.KV.put(`pending_identity_link:${token}`, JSON.stringify(pending), {
+                expirationTtl: PENDING_IDENTITY_LINK_TTL,
+            });
+            setCookie(c, 'oauth_link_nonce', browserNonce, {
+                httpOnly: true,
+                secure: true,
+                sameSite: 'Lax',
+                path: '/auth',
+                maxAge: PENDING_IDENTITY_LINK_TTL,
+            });
+            const query = new URLSearchParams({
+                info: 'account_link_required',
+                provider: target.provider,
+                candidate: profile.provider,
+                link_token: token,
+            });
+            return c.redirect(`/?${query.toString()}`);
+        }
+        if (decision === 'conflict') {
+            const provider = emailUsers.length === 1 ? `&provider=${encodeURIComponent(emailUsers[0].provider)}` : '';
+            return c.redirect(`/?error=email_already_registered${provider}`);
         }
 
         // 이메일 도메인 필터링
-        if (!isEmailDomainAllowed(profile.email, c.env.EMAIL_RESTRICTION, c.env.EMAIL_LIST)) {
+        if (!isEmailDomainAllowed(email, c.env.EMAIL_RESTRICTION, c.env.EMAIL_LIST)) {
             return c.redirect('/?error=email_domain_not_allowed');
         }
 
@@ -108,7 +140,7 @@ export async function handleOAuthLogin(c: Context<Env>, profile: OAuthProfile, r
             await c.env.KV.put(`signup_token:${signupToken}`, JSON.stringify({
                 provider: profile.provider,
                 uid: profile.uid,
-                email: profile.email,
+                email,
                 name: profile.name,
                 picture: profile.picture,
             }), { expirationTtl: 600 });
@@ -118,34 +150,29 @@ export async function handleOAuthLogin(c: Context<Env>, profile: OAuthProfile, r
 
         // 모두 허용: 바로 유저 생성
         const finalName = await resolveUniqueName(db, profile.name);
-
-        const insertResult = await db
-            .prepare('INSERT INTO users (provider, uid, email, name, picture) VALUES (?, ?, ?, ?, ?)')
-            .bind(profile.provider, profile.uid, profile.email, finalName, profile.picture || null)
-            .run();
+        userId = await createUserWithIdentity(db, {
+            provider: profile.provider,
+            uid: profile.uid,
+            email,
+            name: finalName,
+            picture: profile.picture,
+        });
+        isNewUser = true;
 
         // open 정책 신규 가입 → community 채널 환영 알림
-        const newUserId = Number(insertResult.meta?.last_row_id ?? 0);
-        if (newUserId > 0) {
+        if (userId) {
             dispatchDiscord(c.env, c.executionCtx, userJoined({
-                user: { id: newUserId, name: finalName, picture: profile.picture || null },
+                user: { id: userId, name: finalName, picture: profile.picture || null },
                 env: c.env,
             }));
         }
     }
 
-    // 2. user id 조회
-    const user = await db
-        .prepare('SELECT id FROM users WHERE provider = ? AND uid = ?')
-        .bind(profile.provider, profile.uid)
-        .first<{ id: number }>();
-
-    if (!user) {
+    if (!userId) {
         return c.redirect('/error?reason=' + encodeURIComponent('계정 생성에 실패했습니다. 다시 시도해주세요.'));
     }
 
-    // 3. 세션 생성 + 쿠키 발급
-    await createSession(c, user.id, remember);
+    await createSession(c, userId, remember);
 
     if (isNewUser) {
         return c.redirect('/setup-profile');
@@ -157,11 +184,76 @@ export async function handleOAuthLogin(c: Context<Env>, profile: OAuthProfile, r
     return c.redirect(safeRedirect);
 }
 
+export async function handleOAuthLink(
+    c: Context<Env>,
+    profile: OAuthProfile,
+    state: OAuthStateData,
+): Promise<Response> {
+    const currentUser = c.get('user');
+    if (!currentUser || !state.userId || currentUser.id !== state.userId) {
+        return c.redirect('/mypage?identity_error=session_mismatch');
+    }
+
+    const result = await linkIdentity(c.env.DB, currentUser.id, profile);
+    if (result === 'linked' || result === 'already_linked') {
+        return c.redirect(`/mypage?identity_linked=${encodeURIComponent(profile.provider)}`);
+    }
+    return c.redirect(`/mypage?identity_error=${encodeURIComponent(result)}`);
+}
+
+export async function handlePendingIdentityLink(
+    c: Context<Env>,
+    profile: OAuthProfile,
+    state: OAuthStateData,
+): Promise<Response> {
+    const token = state.pendingLinkToken;
+    if (!token) return c.redirect('/?error=invalid_link_request');
+
+    const key = `pending_identity_link:${token}`;
+    const raw = await c.env.KV.get(key);
+    if (!raw) return c.redirect('/?error=link_request_expired');
+
+    const pending = parsePendingIdentityLink(raw);
+    if (!pending) {
+        await c.env.KV.delete(key);
+        return c.redirect('/?error=invalid_link_request');
+    }
+
+    if (!pending.browserNonce || getCookie(c, 'oauth_link_nonce') !== pending.browserNonce) {
+        return c.redirect('/?error=invalid_link_request');
+    }
+
+    const target = await c.env.DB.prepare('SELECT id, provider, uid, role FROM users WHERE id = ?')
+        .bind(pending.targetUserId)
+        .first<{ id: UserId; provider: string; uid: string; role: string }>();
+
+    // 같은 이메일이 아니라 기존 계정의 기본 OAuth identity를 다시 증명했는지 검증한다.
+    if (!target || target.role === 'deleted' || profile.provider !== target.provider || profile.uid !== target.uid) {
+        return c.redirect('/?error=account_link_reauth_failed');
+    }
+
+    const result = await linkIdentity(c.env.DB, target.id, {
+        provider: pending.candidate.provider,
+        uid: pending.candidate.uid,
+        email: pending.candidate.email,
+        name: '',
+    });
+    await c.env.KV.delete(key);
+
+    if (result !== 'linked' && result !== 'already_linked') {
+        return c.redirect(`/?error=${encodeURIComponent(result)}`);
+    }
+
+    await createSession(c, target.id, state.remember ?? false);
+    deleteCookie(c, 'oauth_link_nonce', { path: '/auth', secure: true, sameSite: 'Lax' });
+    return c.redirect(`/?info=account_linked&provider=${encodeURIComponent(pending.candidate.provider)}`);
+}
+
 /**
  * 세션 생성 + 쿠키 설정
  * @param remember "로그인 유지" 여부. true 면 매우 긴 수명, 아니면 6시간.
  */
-export async function createSession(c: Context<Env>, userId: number, remember = false): Promise<void> {
+export async function createSession(c: Context<Env>, userId: UserId, remember = false): Promise<void> {
     const sessionId = crypto.randomUUID();
     const now = Math.floor(Date.now() / 1000);
     const maxAge = remember ? SESSION_TTL_REMEMBER : SESSION_TTL_DEFAULT;

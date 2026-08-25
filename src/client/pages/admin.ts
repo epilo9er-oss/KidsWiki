@@ -187,7 +187,7 @@ import { renderUserAvatar } from '../utils/avatar';
               window.currentUser.role === "super_admin" &&
               u.role !== "super_admin"
             ) {
-              roleSelect = `<select class="form-select form-select-sm w-auto d-inline" onchange="changeRole(${u.id}, this.value)">
+              roleSelect = `<select class="form-select form-select-sm w-auto d-inline" data-uid="${u.id}" onchange="changeRole(this.dataset.uid, this.value)">
                         <option value="user" ${u.role === "user" ? "selected" : ""}>유저</option>
                         <option value="discussion_manager" ${u.role === "discussion_manager" ? "selected" : ""}>토론 관리자</option>
                         <option value="admin" ${u.role === "admin" ? "selected" : ""}>관리자</option>
@@ -200,7 +200,7 @@ import { renderUserAvatar } from '../utils/avatar';
                     <td>${roleSelect}</td>
                     <td>${u.banned_until ? '<span class="badge bg-danger">차단됨</span>' : '<span class="badge bg-success">정상</span>'}</td>
                     <td class="small text-muted">${joinDate}</td>
-                    <td><button class="btn btn-xs btn-outline-danger" data-uid="${u.id}" data-uname="${window.escapeHtml(u.name)}" onclick="promptBan(+this.dataset.uid, this.dataset.uname)">${u.banned_until ? "해제" : "차단"}</button></td>
+                    <td><button class="btn btn-xs btn-outline-danger" data-uid="${u.id}" data-uname="${window.escapeHtml(u.name)}" onclick="promptBan(this.dataset.uid, this.dataset.uname)">${u.banned_until ? "해제" : "차단"}</button></td>
                 </tr>`;
           })
           .join("");

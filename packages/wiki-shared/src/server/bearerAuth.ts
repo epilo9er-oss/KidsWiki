@@ -26,7 +26,7 @@ export async function sha256Hex(input: string): Promise<string> {
 
 /** 공통 사용자 행 shape (mcp_api_keys / oauth_tokens JOIN users 결과). */
 export interface BearerUserRow {
-    uid: number;
+    uid: string;
     provider: string;
     provider_uid: string;
     email: string;

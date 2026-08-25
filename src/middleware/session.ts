@@ -4,6 +4,7 @@ import { isSuperAdmin } from '../utils/auth';
 import { RBAC } from '../utils/role';
 import { ensureMcpInstantApplyMigration } from '../utils/mcpInstantApplyMigration';
 import type { Env, User } from '../types';
+import { isUserId } from '../shared/userId';
 
 /**
  * RBAC 인스턴스를 초기화하여 Context에 주입하는 미들웨어.
@@ -45,8 +46,10 @@ export const sessionMiddleware = createMiddleware<Env>(async (c, next) => {
     if (cached) {
         try {
             const parsed = JSON.parse(cached) as { user: User; expires_at: number };
-            if (parsed.expires_at > now) {
+            if (parsed.expires_at > now && isUserId(parsed.user?.id)) {
                 row = parsed.user;
+            } else {
+                c.executionCtx.waitUntil(kv.delete(cacheKey));
             }
         } catch {
             // 캐시 파싱 실패 시 DB에서 조회

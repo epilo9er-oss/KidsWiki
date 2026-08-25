@@ -173,7 +173,7 @@ notificationRoutes.post('/messages', requireAuthAllowBanned, async (c) => {
     const user = c.get('user')!;
     const db = c.env.DB;
     const { receiver_id, content, reply_to } = await c.req.json<{
-        receiver_id: number;
+        receiver_id: string;
         content: string;
         reply_to?: number;
     }>();
@@ -190,7 +190,7 @@ notificationRoutes.post('/messages', requireAuthAllowBanned, async (c) => {
 
     // 수신자 존재 확인
     const receiver = await db.prepare('SELECT id, name, role, email FROM users WHERE id = ?')
-        .bind(receiver_id).first<{ id: number; name: string; role: string; email: string }>();
+        .bind(receiver_id).first<{ id: string; name: string; role: string; email: string }>();
     if (!receiver) {
         return c.json({ error: '수신자를 찾을 수 없습니다.' }, 404);
     }
@@ -227,7 +227,7 @@ notificationRoutes.post('/messages', requireAuthAllowBanned, async (c) => {
         // reply_to가 관리자가 나에게 보낸 쪽지인지 확인
         const originalMsg = await db.prepare(
             'SELECT sender_id, receiver_id FROM messages WHERE id = ?'
-        ).bind(reply_to).first<{ sender_id: number; receiver_id: number }>();
+        ).bind(reply_to).first<{ sender_id: string; receiver_id: string }>();
 
         if (!originalMsg || originalMsg.receiver_id !== user.id) {
             return c.json({ error: '답장 권한이 없습니다.' }, 403);
@@ -332,7 +332,7 @@ notificationRoutes.delete('/messages/:id', requireAuthAllowBanned, async (c) => 
 
     // 수신자인지 확인
     const msg = await db.prepare('SELECT receiver_id FROM messages WHERE id = ?')
-        .bind(messageId).first<{ receiver_id: number }>();
+        .bind(messageId).first<{ receiver_id: string }>();
 
     if (!msg || msg.receiver_id !== user.id) {
         return c.json({ error: '권한이 없거나 쪽지를 찾을 수 없습니다.' }, 403);

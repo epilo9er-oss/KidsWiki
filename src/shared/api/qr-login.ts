@@ -9,6 +9,8 @@
  *  4. 게스트가 status=approved 를 감지하면 POST /api/qr-login/redeem 으로 6시간 임시 세션 쿠키 수령.
  */
 
+import type { UserId } from '../userId';
+
 export type QrLoginStatus = 'pending' | 'approved' | 'consumed' | 'cancelled' | 'expired';
 
 /** POST /api/qr-login/start 응답 */
@@ -41,7 +43,7 @@ export interface QrLoginInfoResponse {
     status: QrLoginStatus;
     /** 로그인될 계정(승인 페이지를 연 호스트 본인) */
     account: {
-        id: number;
+        id: UserId;
         name: string;
         picture: string | null;
     };

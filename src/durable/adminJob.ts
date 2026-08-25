@@ -122,17 +122,17 @@ interface BulkMoveResult {
 interface BulkDeletePayload {
     ids: number[];
     mode: 'soft' | 'hard';
-    actor: { id: number; role: string };
+    actor: { id: string; role: string };
 }
 interface BulkMovePayload {
     items: { id: number; slug: string }[];
     find: string;
     replace: string;
     updateBacklinks: boolean;
-    actor: { id: number; role: string };
+    actor: { id: string; role: string };
 }
 type ReindexPayload = Record<string, never>;
-type RagBackfillPayload = { actor: { id: number; role: string } };
+type RagBackfillPayload = { actor: { id: string; role: string } };
 type JobPayload = ReindexPayload | BulkDeletePayload | BulkMovePayload | RagBackfillPayload;
 
 function initialState(): JobState {

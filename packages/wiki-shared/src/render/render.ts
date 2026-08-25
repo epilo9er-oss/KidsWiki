@@ -2239,7 +2239,7 @@ function processWikiLinks(contentEl) {
     });
 }
 
-// ── 사용자 멘션 처리 (@[user:123]) ──
+// ── 사용자 멘션 처리 (@[user:<users.id>]) ──
 // 토론·티켓 댓글 렌더에서만 동작한다. renderWikiContent 가 options.mentions
 // (id→{name} 맵) 를 전달할 때만 호출되며, 일반 위키 본문 렌더에는 영향이 없다.
 // processWikiLinks 와 동일하게 마크다운/정화 이후 DOM 텍스트 노드를 후처리한다.
@@ -2261,10 +2261,10 @@ function processMentions(contentEl, mentionUsers) {
 
     textNodes.forEach(node => {
         const frag = document.createDocumentFragment();
-        const parts = node.nodeValue.split(/(@\[user:\d+\])/g).filter(part => part !== '');
+        const parts = node.nodeValue.split(/(@\[user:[1-9A-HJ-NP-Za-km-z]{22}\])/g).filter(part => part !== '');
 
         parts.forEach(part => {
-            const m = /^@\[user:(\d+)\]$/.exec(part);
+            const m = /^@\[user:([1-9A-HJ-NP-Za-km-z]{22})\]$/.exec(part);
             if (m) {
                 const id = m[1];
                 const info = users[id];

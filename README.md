@@ -26,11 +26,15 @@ Cloudflare 프리티어만으로 돌아가는 서버리스 위키입니다. 마�
 
 1. Cloudflare에서 D1 · R2 · KV를 생성합니다.
 2. `wrangler example.toml`을 `wrangler.toml`로 복사하고 바인딩 ID와 도메인, `SUPER_ADMIN_EMAILS`를 채웁니다.
-3. OAuth(Google / Discord) 제공자를 최소 하나 설정합니다.
+3. OAuth(Google / Discord / 네이버 / 카카오) 제공자를 최소 하나 설정합니다.
 4. D1에 `migrations/schema.sql`을 실행해 스키마를 적용합니다.
 5. `npm ci && npm run deploy` 또는 Cloudflare Workers에 이 저장소를 연결해 배포합니다.
 
 위키 이름 · 로고 · 테마 · 레이아웃 등 브랜딩은 모두 `wrangler.toml`의 `[vars]`에서 바꿉니다. 코드에 남은 `KidsWiki` 문자열은 빌드/런타임에 `WIKI_NAME` 값으로 치환되는 플레이스홀더입니다.
+
+한 사용자에게 여러 OAuth 로그인을 연결할 수 있습니다. 같은 이메일은 자동 병합하지 않으며, 기존 계정의 기본 공급자로 다시 인증하거나 로그인된 마이페이지에서 직접 연결해야 합니다.
+
+사용자 계정은 대/소문자를 구분하는 22자리 Base58 `users.id` 하나로 식별합니다. 숫자 ID 스키마로 만든 기존 개발 DB와는 호환되지 않으므로, 해당 버전에서 올 때는 개발 단계의 D1을 한 번 초기화한 뒤 `migrations/schema.sql`을 다시 적용해야 합니다.
 
 ## 라이선스
 

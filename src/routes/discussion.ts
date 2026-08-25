@@ -340,7 +340,7 @@ discussionRoutes.post('/discussions/thread/:id/comments', requireAuth, requirePe
                 ) p
                 WHERE p.author_id != ?
                   AND p.author_id NOT IN (SELECT user_id FROM discussion_mutes WHERE discussion_id = ?)
-            `).bind(discussionId, discussionId, user.id, discussionId).all<{ author_id: number }>();
+            `).bind(discussionId, discussionId, user.id, discussionId).all<{ author_id: string }>();
 
             // 비공개 또는 소프트삭제된 페이지의 토론은 권한 없는 수신자를 제외한다.
             // 권한 누설 방지: 알림 제목/내용/링크에 비공개 문서의 슬러그·토론 제목이 노출되지 않도록 한다.

@@ -43,7 +43,7 @@ export function buildVirtualRevisionStatement(
     db: D1Database,
     pageId: number,
     summary: string,
-    authorId: number | null
+    authorId: string | null
 ): D1PreparedStatement {
     return db
         .prepare(
@@ -57,7 +57,7 @@ export async function insertVirtualRevision(
     db: D1Database,
     pageId: number,
     summary: string,
-    authorId: number | null
+    authorId: string | null
 ): Promise<void> {
     // 레거시 DB(is_virtual 컬럼 부재) 대비 idempotent 마이그레이션 보장 후 INSERT.
     await ensureRevisionsVirtualMigration(db);

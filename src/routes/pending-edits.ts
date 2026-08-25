@@ -56,7 +56,7 @@ interface PendingEditRow {
     page_id: number | null;
     slug: string;
     action: string;
-    author_id: number;
+    author_id: string;
     base_revision_id: number | null;
     base_version: number;
     content: string;
@@ -83,7 +83,7 @@ function unixToIso(sec: number | null): string | null {
 // 한도는 직접 저장과 동일한 SUMMARY_DB_MAX 를 쓴다 — 자동요약분이 옛 255자 한도를 무시하도록
 // 완화됐으므로(요청 사양), 승인 경로에서만 다시 255자로 되돌리지 않는다. 초과 시 작성자 요약만
 // 말줄임표(…)로 잘라 한도를 맞추되, 승인 접미는 항상 보존한다.
-function buildApprovalSuffix(authorSummary: string | null, reviewer: { name: string; id: number }): string {
+function buildApprovalSuffix(authorSummary: string | null, reviewer: { name: string; id: string }): string {
     const suffix = ` (요청 승인 : [${reviewer.name}|${reviewer.id}])`;
     const base = (authorSummary ?? '').trim();
     if (!base) return suffix.trimStart();
@@ -313,7 +313,7 @@ pendingEditsRoutes.get('/pending-edits', requireAuth, async (c) => {
     if (slug) whereBinds.push(slug);
     if (!cap.reviewsAll) whereBinds.push(user.id);
     type ListRow = {
-        id: number; slug: string; action: string; author_id: number;
+        id: number; slug: string; action: string; author_id: string;
         page_id: number | null; category: string | null; category_acl_choices: string | null;
         base_revision_id: number | null; base_version: number;
         summary: string | null; updated_at: number; content_length: number;

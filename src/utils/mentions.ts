@@ -1,5 +1,5 @@
 /**
- * 사용자 멘션(`@[user:123]`) 알림/렌더 지원 서버 헬퍼.
+ * 사용자 멘션(`@[user:<users.id>]`) 알림/렌더 지원 서버 헬퍼.
  *
  * 토론·티켓 댓글 본문에 포함된 멘션을 파싱해 알림 수신자를 해석하거나,
  * 렌더용 id→닉네임 맵을 만든다. 멘션 문법 파싱 자체는 `src/shared/mentions.ts` 공용 유틸을 재사용한다.
@@ -9,7 +9,7 @@ import { ROLE_CASE_SQL, enrichRoles } from './role';
 import { extractMentionIds, stripMarkdownCode } from '../shared/mentions';
 
 export interface MentionRecipient {
-    id: number;
+    id: string;
     name: string;
     role: string;
 }
@@ -47,7 +47,7 @@ export async function resolveMentionRecipients(
     db: D1Database,
     env: Env['Bindings'],
     content: string,
-    excludeUserId: number,
+    excludeUserId: string,
 ): Promise<MentionRecipient[]> {
     // 코드(펜스/인라인) 안의 멘션은 가짜 핑이므로 추출 전에 제거한다.
     const ids = extractMentionIds(stripMarkdownCode(content)).filter((id) => id !== excludeUserId);
@@ -85,7 +85,7 @@ export async function buildMentionUserMap(
     contents: string[],
 ): Promise<Record<string, { name: string }>> {
     // 코드(펜스/인라인) 안의 멘션은 렌더에서 링크화되지 않으므로 맵에서도 제외한다.
-    const idSet = new Set<number>();
+    const idSet = new Set<string>();
     for (const content of contents) {
         for (const id of extractMentionIds(stripMarkdownCode(content))) idSet.add(id);
     }
@@ -96,7 +96,7 @@ export async function buildMentionUserMap(
         const { results } = await db
             .prepare(`SELECT id, name FROM users WHERE id IN (${placeholders(batch.length)})`)
             .bind(...batch)
-            .all<{ id: number; name: string }>();
+            .all<{ id: string; name: string }>();
         for (const row of results ?? []) {
             map[String(row.id)] = { name: row.name };
         }

@@ -143,10 +143,10 @@ RAG를 쓰는 운영 설정에서는 위 두 블록을 활성화하고 `[vars]`�
 
 `wrangler.toml`에서 최소한 다음 값을 실제 주소와 운영 값으로 바꾼다.
 
-- `GOOGLE_REDIRECT_URI`, `DISCORD_REDIRECT_URI`: 배포 주소의 OAuth callback
+- `GOOGLE_REDIRECT_URI`, `DISCORD_REDIRECT_URI`, `NAVER_REDIRECT_URI`, `KAKAO_REDIRECT_URI`: 활성화할 공급자의 배포 OAuth callback
 - `MEDIA_PUBLIC_URL`: `https://<배포주소>/media`
 - `WIKI_PUBLIC_BASE_URL`: `https://<배포주소>`
-- `GOOGLE_CLIENT_ID`, `DISCORD_CLIENT_ID`: 실제로 활성화할 OAuth 공급자의 값
+- `GOOGLE_CLIENT_ID`, `DISCORD_CLIENT_ID`, `NAVER_CLIENT_ID`, `KAKAO_CLIENT_ID`: 실제로 활성화할 OAuth 공급자의 값
 - `SUPER_ADMIN_EMAILS`: 실제 관리자 이메일
 - 첫 확인 전에는 `MCP_MODE = "disabled"`, `ALLOW_CRAWL = "false"` 권장
 - 비공개 테스트라면 `WIKI_VISIBILITY = "closed"` 검토
@@ -156,7 +156,14 @@ Secret 값은 `wrangler.toml`에 쓰거나 Git에 커밋하지 않는다. 첫 Wo
 ```sh
 npx wrangler secret put GOOGLE_CLIENT_SECRET
 npx wrangler secret put DISCORD_CLIENT_SECRET
+npx wrangler secret put NAVER_CLIENT_SECRET
+# 카카오 앱에서 Client Secret 기능을 켠 경우에만
+npx wrangler secret put KAKAO_CLIENT_SECRET
 ```
+
+네이버 앱에는 서비스 URL과 `/auth/naver/callback`을 등록하고, 제공 정보에서 회원 식별자와 이메일을 허용한다. 카카오 앱에는 `/auth/kakao/callback`을 Redirect URI로 등록하고 동의 항목의 닉네임·프로필 사진·카카오계정(이메일)을 설정한다. 공급자가 이메일을 내려주지 않거나 카카오 이메일이 유효·인증 상태가 아니면 기존 계정에 수동 연결은 가능하지만 그 공급자로 신규 가입은 할 수 없다. ([네이버 로그인 개발가이드](https://developers.naver.com/docs/login/devguide/devguide.md), [Kakao Login REST API](https://developers.kakao.com/docs/latest/ko/kakaologin/rest-api))
+
+여러 공급자의 이메일이 같아도 서버는 자동 병합하지 않는다. 새 공급자 로그인 뒤 기존 계정의 기본 공급자로 다시 인증하거나, 로그인된 상태에서 마이페이지의 **로그인 계정**에서 직접 연결해야 한다. 기본 로그인 수단은 해제할 수 없고 보조 수단만 해제할 수 있다.
 
 다음 Secret은 해당 기능을 쓸 때만 추가한다.
 
@@ -168,6 +175,8 @@ npx wrangler secret put DISCORD_CLIENT_SECRET
 ## 5. 원격 스키마와 배포
 
 리소스 ID가 연결된 뒤 운영 D1에 스키마를 적용한다. 이 명령은 로컬 DB가 아니라 원격 DB를 변경한다.
+
+> 숫자형 `users.id`를 사용하던 개발 DB가 있다면 이번에는 증분 적용할 수 없다. `users.id`와 모든 사용자 참조가 22자리 Base58 `TEXT`로 바뀌었으므로, 출시 전 D1을 새로 만들고 `wrangler.toml`의 `database_id`를 새 값으로 교체한 뒤 아래 스키마를 적용한다. 기존 숫자 ID가 든 `session:*` KV 캐시는 새 코드가 자동 폐기하므로 KV namespace를 다시 만들 필요는 없다. R2도 ID 전환 때문에 지울 필요는 없지만, D1 미디어 행도 초기화되므로 기존 객체는 더 이상 참조되지 않는다.
 
 ```sh
 npx wrangler d1 execute DB --remote --file=migrations/schema.sql
@@ -218,11 +227,13 @@ Custom Domain에서는 Worker가 원본 서버가 되며, Cloudflare가 필요�
 
 ```toml
 GOOGLE_REDIRECT_URI = "https://wiki.example.com/auth/google/callback"
+NAVER_REDIRECT_URI = "https://wiki.example.com/auth/naver/callback"
+KAKAO_REDIRECT_URI = "https://wiki.example.com/auth/kakao/callback"
 MEDIA_PUBLIC_URL = "https://wiki.example.com/media"
 WIKI_PUBLIC_BASE_URL = "https://wiki.example.com"
 ```
 
-Discord 로그인을 활성화했다면 `DISCORD_REDIRECT_URI`도 `https://wiki.example.com/auth/discord/callback`으로 바꾼다. D1/KV/R2 바인딩 ID, OAuth Client ID, Secret은 그대로 사용한다. 로컬 개발용 `.dev.vars`의 `http://localhost:8787/auth/google/callback`도 바꾸지 않는다.
+Discord 로그인을 활성화했다면 `DISCORD_REDIRECT_URI`도 `https://wiki.example.com/auth/discord/callback`으로 바꾼다. 사용하지 않는 공급자의 변수는 생략해도 된다. D1/KV/R2 바인딩 ID, OAuth Client ID, Secret은 그대로 사용한다. 로컬 개발용 `.dev.vars`의 localhost callback 값도 바꾸지 않는다.
 
 Google Cloud Console의 OAuth 클라이언트에는 배포 전에 다음 승인된 리디렉션 URI를 정확히 추가한다.
 
@@ -231,6 +242,8 @@ https://wiki.example.com/auth/google/callback
 ```
 
 현재 구현은 서버 측 OAuth라 **승인된 JavaScript 원본**은 필수가 아니다. 이미 원본을 등록해 관리하고 있다면 `https://wiki.example.com`도 추가한다.
+
+네이버 개발자 센터와 Kakao Developers에도 각각 위의 정확한 callback URI를 등록한다. 코드를 먼저 배포할 때는 `AUTH_PROVIDERS = "google"`처럼 기존 공급자만 유지하고, 앱 심사·동의 항목·Secret 등록을 마친 뒤 `naver`, 다음 `kakao`를 한 개씩 추가해 로그인과 마이페이지 계정 연결을 확인한다.
 
 ### 6.3. 배포하고 기존 주소 정리
 

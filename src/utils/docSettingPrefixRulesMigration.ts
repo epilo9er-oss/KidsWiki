@@ -87,7 +87,7 @@ export async function ensureDocSettingPrefixRulesMigration(db: D1Database): Prom
                                 edit_acl   TEXT,
                                 categories TEXT,
                                 created_at INTEGER DEFAULT (unixepoch()),
-                                created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                                created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
                                 CHECK (is_private IS NOT NULL OR edit_acl IS NOT NULL OR categories IS NOT NULL)
                             )`
                         )

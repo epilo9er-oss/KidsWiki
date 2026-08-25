@@ -22,7 +22,7 @@ type GlobalBridge = typeof window & {
     setTheme?: (mode: 'light' | 'dark' | 'auto') => void;
     openSettingsModal?: () => void;
     currentUser?: {
-        id: number;
+        id: string;
         name: string;
         role: string;
         permissions?: Record<string, boolean>;

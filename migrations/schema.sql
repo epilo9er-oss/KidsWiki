@@ -4,7 +4,9 @@
 
 -- 사용자 테이블
 CREATE TABLE IF NOT EXISTS users (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  -- 앱에서 생성하는 22자리 Base58 식별자. 대/소문자를 구분하며 이 값 하나만 사용자 PK로 쓴다.
+  id         TEXT NOT NULL PRIMARY KEY COLLATE BINARY
+             CHECK(length(id) = 22 AND id NOT GLOB '*[^1-9A-HJ-NP-Za-km-z]*'),
   provider   TEXT NOT NULL,
   uid        TEXT NOT NULL,
   email      TEXT NOT NULL UNIQUE,
@@ -24,10 +26,29 @@ CREATE TABLE IF NOT EXISTS users (
 );
 CREATE INDEX IF NOT EXISTS idx_users_created ON users(created_at DESC);
 
+-- 한 사용자 계정에 연결된 OAuth 로그인 수단.
+-- users.provider/uid 는 기존 코드 호환을 위한 기본 로그인 수단으로 유지하고,
+-- 실제 로그인 식별은 이 테이블의 (provider, provider_uid) 를 단일 진실로 사용한다.
+CREATE TABLE IF NOT EXISTS user_identities (
+  user_id        TEXT NOT NULL,
+  provider       TEXT NOT NULL,
+  provider_uid   TEXT NOT NULL,
+  provider_email TEXT,
+  created_at     INTEGER NOT NULL DEFAULT (unixepoch()),
+  PRIMARY KEY (provider, provider_uid),
+  UNIQUE (user_id, provider),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_identities_user ON user_identities(user_id);
+
+-- 기존 단일 OAuth 계정을 최초 실행 시 기본 identity 로 이관한다.
+INSERT OR IGNORE INTO user_identities (user_id, provider, provider_uid, provider_email)
+SELECT id, provider, uid, email FROM users;
+
 -- 세션 테이블
 CREATE TABLE IF NOT EXISTS sessions (
   id         TEXT PRIMARY KEY,
-  user_id    INTEGER NOT NULL,
+  user_id    TEXT NOT NULL,
   expires_at INTEGER NOT NULL,
   user_agent TEXT,
   created_at INTEGER DEFAULT (unixepoch()),
@@ -51,7 +72,7 @@ CREATE TABLE IF NOT EXISTS qr_login_sessions (
   secret_hash      TEXT NOT NULL,
   status           TEXT NOT NULL DEFAULT 'pending',  -- 'pending' | 'approved' | 'consumed' | 'cancelled'
   guest_ua         TEXT,
-  approved_user_id INTEGER,
+  approved_user_id TEXT,
   created_at       INTEGER NOT NULL DEFAULT (unixepoch()),
   expires_at       INTEGER NOT NULL,
   approved_at      INTEGER,
@@ -113,7 +134,7 @@ CREATE TABLE IF NOT EXISTS revisions (
   content      TEXT NOT NULL DEFAULT '',
   r2_key       TEXT,
   summary      TEXT,
-  author_id    INTEGER,
+  author_id    TEXT,
   created_at   INTEGER DEFAULT (unixepoch()),
   deleted_at   INTEGER,
   purged_at    INTEGER,
@@ -142,7 +163,7 @@ CREATE TABLE IF NOT EXISTS media (
   filename    TEXT NOT NULL,
   mime_type   TEXT NOT NULL,
   size        INTEGER NOT NULL,
-  uploader_id INTEGER,
+  uploader_id TEXT,
   content     TEXT NOT NULL DEFAULT '',
   created_at  INTEGER DEFAULT (unixepoch()),
   FOREIGN KEY (uploader_id) REFERENCES users(id)
@@ -232,7 +253,7 @@ CREATE TABLE IF NOT EXISTS category_acl (
     name       TEXT PRIMARY KEY,
     edit_acl   TEXT,
     created_at INTEGER DEFAULT (unixepoch()),
-    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL
 );
 
 -- 설정 테이블
@@ -257,7 +278,7 @@ INSERT OR IGNORE INTO settings (id) VALUES (1);
 -- 알림 테이블
 CREATE TABLE IF NOT EXISTS notifications (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id     INTEGER NOT NULL,
+  user_id     TEXT NOT NULL,
   type        TEXT NOT NULL,
   content     TEXT NOT NULL,
   link        TEXT,
@@ -275,8 +296,8 @@ CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at
 -- 쪽지 테이블
 CREATE TABLE IF NOT EXISTS messages (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  sender_id   INTEGER NOT NULL,
-  receiver_id INTEGER NOT NULL,
+  sender_id   TEXT NOT NULL,
+  receiver_id TEXT NOT NULL,
   content     TEXT NOT NULL,
   reply_to    INTEGER,
   created_at  INTEGER DEFAULT (unixepoch()),
@@ -294,7 +315,7 @@ CREATE TABLE IF NOT EXISTS discussions (
   page_id     INTEGER NOT NULL,
   title       TEXT NOT NULL,
   status      TEXT NOT NULL DEFAULT 'open',
-  author_id   INTEGER,
+  author_id   TEXT,
   created_at  INTEGER DEFAULT (unixepoch()),
   updated_at  INTEGER DEFAULT (unixepoch()),
   deleted_at  INTEGER,
@@ -307,7 +328,7 @@ CREATE INDEX IF NOT EXISTS idx_discussions_page_updated ON discussions(page_id, 
 CREATE TABLE IF NOT EXISTS discussion_comments (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   discussion_id   INTEGER NOT NULL,
-  author_id       INTEGER,
+  author_id       TEXT,
   content         TEXT NOT NULL,
   parent_id       INTEGER,
   created_at      INTEGER DEFAULT (unixepoch()),
@@ -324,7 +345,7 @@ CREATE TABLE IF NOT EXISTS tickets (
   title       TEXT NOT NULL,
   type        TEXT NOT NULL DEFAULT 'general',
   status      TEXT NOT NULL DEFAULT 'open',
-  user_id     INTEGER NOT NULL,
+  user_id     TEXT NOT NULL,
   created_at  INTEGER DEFAULT (unixepoch()),
   updated_at  INTEGER DEFAULT (unixepoch()),
   deleted_at  INTEGER,
@@ -337,7 +358,7 @@ CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
 CREATE TABLE IF NOT EXISTS ticket_comments (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   ticket_id   INTEGER NOT NULL,
-  author_id   INTEGER,
+  author_id   TEXT,
   content     TEXT NOT NULL,
   parent_id   INTEGER,
   created_at  INTEGER DEFAULT (unixepoch()),
@@ -353,7 +374,7 @@ CREATE TABLE IF NOT EXISTS admin_log (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   type       TEXT NOT NULL,
   log        TEXT NOT NULL,
-  user       INTEGER NOT NULL,
+  user       TEXT NOT NULL,
   created_at INTEGER DEFAULT (unixepoch()),
   FOREIGN KEY (user) REFERENCES users(id)
 );
@@ -370,7 +391,7 @@ CREATE INDEX IF NOT EXISTS idx_admin_log_user_created ON admin_log(user, created
 -- submitted_at IS NOT NULL → 승인 대기 (30일 TTL).
 CREATE TABLE IF NOT EXISTS mcp_drafts (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id           INTEGER NOT NULL,
+  user_id           TEXT NOT NULL,
   slug              TEXT NOT NULL,
   action            TEXT NOT NULL,
   base_revision_id  INTEGER,
@@ -407,7 +428,7 @@ CREATE TABLE IF NOT EXISTS pending_edits (
   page_id           INTEGER,
   slug              TEXT NOT NULL,
   action            TEXT NOT NULL,
-  author_id         INTEGER NOT NULL,
+  author_id         TEXT NOT NULL,
   base_revision_id  INTEGER,
   base_version      INTEGER NOT NULL DEFAULT 0,
   content           TEXT NOT NULL DEFAULT '',
@@ -474,7 +495,7 @@ CREATE TABLE IF NOT EXISTS signup_requests (
   picture_private INTEGER NOT NULL DEFAULT 0,
   message     TEXT DEFAULT '',
   status      TEXT NOT NULL DEFAULT 'pending',  -- 'pending', 'approved', 'rejected', 'blocked'
-  reviewed_by INTEGER,
+  reviewed_by TEXT,
   created_at  INTEGER DEFAULT (unixepoch()),
   reviewed_at INTEGER,
   FOREIGN KEY (reviewed_by) REFERENCES users(id)
@@ -485,7 +506,7 @@ CREATE INDEX IF NOT EXISTS idx_signup_requests_created ON signup_requests(create
 
 -- 개별 토론 알림 뮤트 테이블
 CREATE TABLE IF NOT EXISTS discussion_mutes (
-    user_id       INTEGER NOT NULL,
+    user_id       TEXT NOT NULL,
     discussion_id INTEGER NOT NULL,
     created_at    INTEGER DEFAULT (unixepoch()),
     PRIMARY KEY (user_id, discussion_id),
@@ -498,7 +519,7 @@ CREATE INDEX IF NOT EXISTS idx_discussion_mutes_discussion ON discussion_mutes(d
 -- scope='this'    : 해당 문서만 구독
 -- scope='subtree' : 해당 문서 + 하위 문서( slug LIKE '{watched}/%' )까지 구독
 CREATE TABLE IF NOT EXISTS page_watches (
-    user_id   INTEGER NOT NULL,
+    user_id   TEXT NOT NULL,
     page_id   INTEGER NOT NULL,
     scope     TEXT NOT NULL DEFAULT 'this',
     created_at INTEGER DEFAULT (unixepoch()),
@@ -512,7 +533,7 @@ CREATE INDEX IF NOT EXISTS idx_page_watches_user ON page_watches(user_id);
 -- 카테고리 주시 테이블
 -- 해당 카테고리에 속한 모든 문서의 편집 알림을 받는다.
 CREATE TABLE IF NOT EXISTS category_watches (
-    user_id    INTEGER NOT NULL,
+    user_id    TEXT NOT NULL,
     category   TEXT NOT NULL,
     created_at INTEGER DEFAULT (unixepoch()),
     PRIMARY KEY (user_id, category),
@@ -527,7 +548,7 @@ CREATE TABLE IF NOT EXISTS category_prefix_rules (
     prefix     TEXT NOT NULL UNIQUE,
     categories TEXT NOT NULL,
     created_at INTEGER DEFAULT (unixepoch()),
-    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_category_prefix_rules_prefix ON category_prefix_rules(prefix);
 
@@ -542,7 +563,7 @@ CREATE TABLE IF NOT EXISTS doc_setting_prefix_rules (
     edit_acl   TEXT,
     categories TEXT,
     created_at INTEGER DEFAULT (unixepoch()),
-    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
     CHECK (is_private IS NOT NULL OR edit_acl IS NOT NULL OR categories IS NOT NULL)
 );
 
@@ -556,7 +577,7 @@ CREATE TABLE IF NOT EXISTS palettes (
     dark_bg     TEXT,
     dark_color  TEXT,
     created_at  INTEGER DEFAULT (unixepoch()),
-    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL
+    created_by  TEXT REFERENCES users(id) ON DELETE SET NULL
 );
 
 -- 블로그 포스트 테이블
@@ -580,7 +601,7 @@ CREATE INDEX IF NOT EXISTS idx_blog_posts_deleted ON blog_posts(deleted_at);
 -- 승인 시 user_id 로 승격, signup_request_id 는 NULL 로 초기화.
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id           INTEGER,
+  user_id           TEXT,
   signup_request_id INTEGER,
   endpoint          TEXT NOT NULL UNIQUE,
   p256dh            TEXT NOT NULL,
@@ -609,7 +630,7 @@ CREATE TABLE IF NOT EXISTS oauth_clients (
   token_endpoint_auth_method      TEXT NOT NULL DEFAULT 'none',          -- 'none' | 'client_secret_post' | 'client_secret_basic'
   registration_access_token_hash  TEXT,
   created_at                      INTEGER DEFAULT (unixepoch()),
-  created_by_user_id              INTEGER                                 -- DCR (anonymous) 인 경우 NULL
+  created_by_user_id              TEXT                                    -- DCR (anonymous) 인 경우 NULL
 );
 CREATE INDEX IF NOT EXISTS idx_oauth_clients_created ON oauth_clients(created_at DESC);
 
@@ -617,7 +638,7 @@ CREATE INDEX IF NOT EXISTS idx_oauth_clients_created ON oauth_clients(created_at
 CREATE TABLE IF NOT EXISTS oauth_codes (
   code_hash             TEXT PRIMARY KEY,                                 -- SHA-256 hex
   client_id             TEXT NOT NULL,
-  user_id               INTEGER NOT NULL,
+  user_id               TEXT NOT NULL,
   redirect_uri          TEXT NOT NULL,
   code_challenge        TEXT NOT NULL,
   code_challenge_method TEXT NOT NULL DEFAULT 'S256',
@@ -636,7 +657,7 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
   access_token_hash   TEXT NOT NULL UNIQUE,
   refresh_token_hash  TEXT UNIQUE,
   client_id           TEXT NOT NULL,
-  user_id             INTEGER NOT NULL,
+  user_id             TEXT NOT NULL,
   scope               TEXT,
   access_expires_at   INTEGER NOT NULL,
   refresh_expires_at  INTEGER,
@@ -650,7 +671,7 @@ CREATE INDEX IF NOT EXISTS idx_oauth_tokens_refresh ON oauth_tokens(refresh_toke
 
 -- MCP API 키 테이블
 CREATE TABLE IF NOT EXISTS mcp_api_keys (
-  user_id     INTEGER PRIMARY KEY,
+  user_id     TEXT PRIMARY KEY,
   key_hash    TEXT NOT NULL UNIQUE,  -- SHA-256 hex
   masked_key  TEXT NOT NULL,         -- UI 노출용 (예: "mcp_abc...xyz")
   created_at  INTEGER DEFAULT (unixepoch()),

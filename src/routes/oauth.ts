@@ -407,7 +407,7 @@ async function authenticateClient(c: Context<Env>, formClientId?: string, formCl
     return { ok: true, client: row };
 }
 
-async function issueTokenPair(c: Context<Env>, clientId: string, userId: number, scope: string) {
+async function issueTokenPair(c: Context<Env>, clientId: string, userId: string, scope: string) {
     const accessToken = generateOpaqueToken(32);
     const refreshToken = generateOpaqueToken(32);
     const accessHash = await sha256Hex(accessToken);
@@ -476,7 +476,7 @@ oauth.post('/oauth/token', async (c) => {
             )
             .bind(codeHash)
             .first<{
-                client_id: string; user_id: number; redirect_uri: string;
+                client_id: string; user_id: string; redirect_uri: string;
                 code_challenge: string; code_challenge_method: string; scope: string | null;
                 expires_at: number; used_at: number | null;
             }>();
@@ -531,7 +531,7 @@ oauth.post('/oauth/token', async (c) => {
                  FROM oauth_tokens WHERE refresh_token_hash = ?`
             )
             .bind(refreshHash)
-            .first<{ id: number; client_id: string; user_id: number; scope: string | null; refresh_expires_at: number | null; revoked_at: number | null }>();
+            .first<{ id: number; client_id: string; user_id: string; scope: string | null; refresh_expires_at: number | null; revoked_at: number | null }>();
         if (!row) return badRequest(c, 'invalid_grant', 'Refresh token not found');
         if (row.client_id !== client.client_id) return badRequest(c, 'invalid_grant', 'Token does not belong to this client');
         const now = Math.floor(Date.now() / 1000);
@@ -553,7 +553,7 @@ oauth.post('/oauth/token', async (c) => {
         const userRow = await c.env.DB
             .prepare('SELECT id, role, banned_until FROM users WHERE id = ?')
             .bind(row.user_id)
-            .first<{ id: number; role: string; banned_until: number | null }>();
+            .first<{ id: string; role: string; banned_until: number | null }>();
         if (!userRow) return badRequest(c, 'invalid_grant', 'User not found');
         // 활성 ban 판정은 ROLE_CASE_SQL 과 동일하게 banned_until 기준 — 만료된 ban(role='banned'
         // 이지만 banned_until 이 null/과거)은 시스템 전반에서 'user'로 정규화되므로 거부하지 않는다.

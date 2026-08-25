@@ -11,6 +11,7 @@ import type {
     QrLoginRedeemResponse,
     QrLoginStatus,
 } from '../shared/api/qr-login';
+import type { UserId } from '../shared/userId';
 
 /**
  * QR 로그인 라우트 (`/api/qr-login/*`).
@@ -38,7 +39,7 @@ interface QrRow {
     secret_hash: string;
     status: string;
     guest_ua: string | null;
-    approved_user_id: number | null;
+    approved_user_id: UserId | null;
     created_at: number;
     expires_at: number;
     approved_at: number | null;
@@ -281,7 +282,7 @@ qrLogin.post('/qr-login/redeem', async (c) => {
     const acct = await db
         .prepare('SELECT id, role, banned_until FROM users WHERE id = ?')
         .bind(approvedUserId)
-        .first<{ id: number; role: string; banned_until: number | null }>();
+        .first<{ id: UserId; role: string; banned_until: number | null }>();
     if (!acct || acct.role === 'deleted') {
         return c.json({ error: '계정을 사용할 수 없습니다.' }, 403);
     }

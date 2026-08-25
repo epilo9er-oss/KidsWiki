@@ -12,7 +12,7 @@ import type { Env } from '../types';
 import { pushToUser, type PushPayload } from './push';
 
 export type NotificationInput = {
-    userId: number;
+    userId: string;
     type: string;
     content: string;
     link?: string | null;
@@ -24,7 +24,7 @@ export type NotificationInput = {
 function schedulePush(
     env: Env['Bindings'],
     ctx: ExecutionContext,
-    userId: number,
+    userId: string,
     payload: PushPayload,
 ): void {
     ctx.waitUntil(pushToUser(env, userId, payload));

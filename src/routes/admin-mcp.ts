@@ -987,7 +987,7 @@ async function markDraftSubmittedAndNotify(
     const ownerRow = await db
         .prepare('SELECT user_id FROM mcp_drafts WHERE id = ?')
         .bind(draftId)
-        .first<{ user_id: number | null }>();
+        .first<{ user_id: string | null }>();
     if (ownerRow?.user_id) {
         const notifContent = `MCP 서버로 제출된 "${slug}" 문서 편집안이 존재합니다.`;
         await createNotification(c.env, c.executionCtx, {
@@ -1406,7 +1406,7 @@ export async function dispatchAdminEditTool(c: Context<Env>, user: User, toolNam
                     content, category, redirect_to, title, has_title_change, editor_note, submitted_at
              FROM mcp_drafts WHERE id = ?`
         ).bind(draftId).first<{
-            id: number; user_id: number; slug: string; action: string;
+            id: number; user_id: string; slug: string; action: string;
             base_revision_id: number | null; base_version: number; content: string;
             category: string | null; redirect_to: string | null;
             title: string | null; has_title_change: number; editor_note: string | null;
@@ -1602,7 +1602,7 @@ export async function dispatchAdminEditTool(c: Context<Env>, user: User, toolNam
             return asTextResult('Error: draft_id 는 양의 정수여야 합니다.', true);
         }
         const draft = await db.prepare('SELECT id, user_id, slug, submitted_at FROM mcp_drafts WHERE id = ?')
-            .bind(draftId).first<{ id: number; user_id: number; slug: string; submitted_at: number | null }>();
+            .bind(draftId).first<{ id: number; user_id: string; slug: string; submitted_at: number | null }>();
         if (!draft) return asTextResult('Error: draft 를 찾을 수 없습니다 (이미 commit/discard 됐거나 TTL 만료).', true);
         if (draft.user_id !== user.id) return asTextResult('Error: 다른 사용자의 draft 는 discard 할 수 없습니다.', true);
         // 승인 대기 상태였다면 알림도 같이 정리한다 — mypage 목록에서 사라지므로 알림만 남으면 dead link 가 된다.

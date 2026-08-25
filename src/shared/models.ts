@@ -9,10 +9,12 @@
  *   참조한다. Env / RolePermissions / AppContext 같은 서버 전용 타입은 src/types.ts 에 남는다.
  */
 
+import type { UserId } from './userId';
+
 export interface User {
-    id: number;
-    provider: string;    // 'google' | 'github' | 'discord' | ...
-    uid: string;         // 공급자 측 사용자 ID
+    id: UserId;
+    provider: string;    // 기본 OAuth 로그인 공급자. 전체 연결 목록은 user_identities 참조
+    uid: string;         // 기본 공급자 측 사용자 ID
     email: string;
     name: string;
     picture: string | null;
@@ -35,7 +37,7 @@ export interface Redirect {
 
 export interface Session {
     id: string;
-    user_id: number;
+    user_id: UserId;
     expires_at: number;
 }
 
@@ -67,7 +69,7 @@ export interface Revision {
     content: string;          // 기존 리비전: 본문 직접 저장. 신규 리비전: '' (r2_key 사용)
     r2_key: string | null;    // R2 저장 경로 (revisions/{pageId}/{pageVersion}-{token}.md, 토큰은 동시 저장 충돌 방지용)
     summary: string | null;
-    author_id: number | null;
+    author_id: UserId | null;
     created_at: number;
     // 가상 리비전 플래그. 1 이면 본문 변경 없는 비-본문 변경(ACL/비공개/주소 이동)을
     // 편집 요약으로만 기록한 행. 삭제·열람·비교·되돌리기 불가, R2 스냅샷 없음.
@@ -80,7 +82,7 @@ export interface Media {
     filename: string;
     mime_type: string;
     size: number;
-    uploader_id: number | null;
+    uploader_id: UserId | null;
     content: string;
     created_at: number;
 }
@@ -90,7 +92,7 @@ export interface Discussion {
     page_id: number;
     title: string;
     status: 'open' | 'closed';
-    author_id: number | null;
+    author_id: UserId | null;
     created_at: number;
     updated_at: number;
     deleted_at: number | null;
@@ -99,7 +101,7 @@ export interface Discussion {
 export interface DiscussionComment {
     id: number;
     discussion_id: number;
-    author_id: number | null;
+    author_id: UserId | null;
     content: string;
     parent_id: number | null;
     created_at: number;
@@ -111,7 +113,7 @@ export interface Ticket {
     title: string;
     type: 'general' | 'document' | 'discussion' | 'account';
     status: 'open' | 'closed';
-    user_id: number;
+    user_id: UserId;
     created_at: number;
     updated_at: number;
     deleted_at: number | null;
@@ -120,7 +122,7 @@ export interface Ticket {
 export interface TicketComment {
     id: number;
     ticket_id: number;
-    author_id: number | null;
+    author_id: UserId | null;
     content: string;
     parent_id: number | null;
     created_at: number;
@@ -129,7 +131,7 @@ export interface TicketComment {
 
 export interface Notification {
     id: number;
-    user_id: number;
+    user_id: UserId;
     type: 'discussion_comment' | 'banned' | 'message' | 'ticket_comment' | 'ticket_created' | 'signup_request' | 'page_watch';
     content: string;
     link: string | null;
@@ -139,8 +141,8 @@ export interface Notification {
 
 export interface Message {
     id: number;
-    sender_id: number;
-    receiver_id: number;
+    sender_id: UserId;
+    receiver_id: UserId;
     content: string;
     reply_to: number | null;
     created_at: number;
