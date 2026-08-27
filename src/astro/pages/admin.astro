@@ -42,6 +42,7 @@ import Footer from '../components/Footer.astro';
               href="javascript:void(0)"
               class="admin-nav-item active"
               onclick="showTab('tab-dashboard')"
+              aria-current="page"
             >
               <i class="mdi mdi-view-dashboard-outline"></i>
               <span>대시보드</span>
@@ -77,6 +78,16 @@ import Footer from '../components/Footer.astro';
             >
               <i class="mdi mdi-chart-line"></i> <span>통계 및 로그</span>
             </a>
+            <div class="ms-3 ps-2 border-start" role="group" aria-label="통계 및 로그 하위 메뉴">
+              <a
+                href="javascript:void(0)"
+                class="admin-nav-item"
+                onclick="showTab('tab-contributions')"
+              >
+                <i class="mdi mdi-account-details-outline" aria-hidden="true"></i>
+                <span>분야별 기여 현황</span>
+              </a>
+            </div>
           </div>
         </div>
       </aside>
@@ -995,27 +1006,6 @@ import Footer from '../components/Footer.astro';
         <!-- ── 탭: 통계 및 로그 (Stats) ── -->
         <div id="tab-stats" class="tab-pane">
           <div class="card shadow-sm border-0 mb-4">
-            <div class="card-header py-3 d-flex flex-wrap gap-2 justify-content-between align-items-center">
-              <h5 class="mb-0">
-                <i class="mdi mdi-account-details-outline text-primary" aria-hidden="true"></i>
-                분야 기여 현황
-              </h5>
-              <span class="badge bg-secondary">실험</span>
-            </div>
-            <div class="card-body">
-              <p class="text-muted small mb-3">
-                카테고리가 연결된 공개 문서의 실제 편집만 집계한 누적치입니다. 순위나 전문성 판정에는 사용하지 않습니다.
-              </p>
-              <div id="topicContributionOverview" aria-live="polite">
-                <div class="d-flex align-items-center gap-2 text-muted py-3" role="status">
-                  <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
-                  <span>분야 기여 현황을 불러오는 중...</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="card shadow-sm border-0 mb-4">
             <div
               class="card-header py-3 d-flex justify-content-between align-items-center"
             >
@@ -1183,6 +1173,30 @@ import Footer from '../components/Footer.astro';
                   id="adminLogPagination"
                   aria-label="관리 활동 로그 페이지 이동"
                 ></nav>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── 탭: 분야별 기여 현황 (Contributions) ── -->
+        <div id="tab-contributions" class="tab-pane">
+          <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header py-3 d-flex flex-wrap gap-2 justify-content-between align-items-center">
+              <h5 class="mb-0">
+                <i class="mdi mdi-account-details-outline text-primary" aria-hidden="true"></i>
+                분야별 기여 현황
+              </h5>
+              <span class="badge bg-secondary">실험</span>
+            </div>
+            <div class="card-body">
+              <p class="text-muted small mb-3">
+                카테고리가 연결된 공개 문서의 실제 편집만 집계한 누적치입니다. 순위나 전문성 판정에는 사용하지 않습니다.
+              </p>
+              <div id="topicContributionOverview" aria-live="polite">
+                <div class="d-flex align-items-center gap-2 text-muted py-3" role="status">
+                  <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                  <span>분야별 기여 현황을 불러오는 중...</span>
+                </div>
               </div>
             </div>
           </div>

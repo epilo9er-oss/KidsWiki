@@ -14,6 +14,8 @@
 
 import { renderUserAvatar } from '../utils/avatar';
 
+      let contributionOverviewLoaded = false;
+
       // ── 탭 전환 로직 ──
       function showTab(tabId) {
         document
@@ -23,16 +25,16 @@ import { renderUserAvatar } from '../utils/avatar';
 
         document.querySelectorAll(".admin-nav-item").forEach((item) => {
           const onclick = item.getAttribute("onclick");
-          if (onclick && onclick.includes(tabId)) {
-            item.classList.add("active");
-          } else {
-            item.classList.remove("active");
-          }
+          const active = Boolean(onclick && onclick.includes(tabId));
+          item.classList.toggle("active", active);
+          if (active) item.setAttribute("aria-current", "page");
+          else item.removeAttribute("aria-current");
         });
 
         if (tabId === "tab-users" && !userListLoaded) toggleUserList();
         if (tabId === "tab-content" && !deletedPagesLoaded) loadDeletedPages(1);
         if (tabId === "tab-stats" && !adminLogLoaded) loadAdminLogs();
+        if (tabId === "tab-contributions" && !contributionOverviewLoaded) loadContributionOverview();
       }
 
       document.addEventListener("DOMContentLoaded", async () => {
@@ -90,7 +92,6 @@ import { renderUserAvatar } from '../utils/avatar';
         loadWikiSettings();
         loadSignupPolicy();
         loadDashStats();
-        loadContributionOverview();
         if (typeof window.loadPaletteList === "function") {
           window.loadPaletteList();
         }
@@ -118,6 +119,7 @@ import { renderUserAvatar } from '../utils/avatar';
 
       async function loadContributionOverview() {
         const container = document.getElementById("topicContributionOverview");
+        contributionOverviewLoaded = true;
         try {
           const res = await fetch("/api/admin/contribution-topics");
           if (!res.ok) throw new Error();
@@ -174,6 +176,7 @@ import { renderUserAvatar } from '../utils/avatar';
             </div>
           `;
         } catch (e) {
+          contributionOverviewLoaded = false;
           container.innerHTML = window.uiEmptyState({
             compact: true,
             icon: "bi bi-exclamation-triangle",
