@@ -68,6 +68,7 @@ import { createTocController } from '../article/toc';
         const candidate = urlParams.get('provider') || '';
         const identityToken = urlParams.get('identity_token') || '';
         const canSignup = urlParams.get('can_signup') === '1';
+        const reauthFailed = urlParams.get('reauth_failed') === '1';
         const providerLabels = { google: 'Google', discord: 'Discord', naver: '네이버', kakao: '카카오' };
         window.history.replaceState({}, '', '/');
 
@@ -80,15 +81,19 @@ import { createTocController } from '../article/toc';
           } catch (_) { }
 
           const choice = await Swal.fire({
-            icon: 'question',
-            title: `${providerLabels[candidate]} 로그인을 어떻게 사용할까요?`,
-            text: canSignup
-              ? '새 계정을 만들거나, 이미 사용 중인 계정으로 다시 인증해 로그인 수단만 연결할 수 있습니다.'
-              : '이 로그인 정보로는 새 계정을 만들 수 없습니다. 이미 사용 중인 계정으로 인증해 로그인 수단을 연결해주세요.',
+            icon: reauthFailed ? 'warning' : 'question',
+            title: reauthFailed ? '가입된 기존 계정 없음' : `${providerLabels[candidate]} 로그인을 어떻게 사용할까요?`,
+            text: reauthFailed
+              ? canSignup
+                ? '가입된 기존 계정이 확인되지 않습니다. 새 계정으로 가입할 수 있습니다.'
+                : '가입된 기존 계정이 확인되지 않습니다. 다른 계정으로 다시 로그인해주세요.'
+              : canSignup
+                ? '새 계정을 만들거나, 이미 사용 중인 계정으로 다시 인증해 로그인 수단만 연결할 수 있습니다.'
+                : '이 로그인 정보로는 새 계정을 만들 수 없습니다. 이미 사용 중인 계정으로 인증해 로그인 수단을 연결해주세요.',
             showConfirmButton: canSignup,
-            showDenyButton: existingProviders.length > 0,
+            showDenyButton: !reauthFailed && existingProviders.length > 0,
             showCancelButton: true,
-            confirmButtonText: '새 계정으로 가입',
+            confirmButtonText: reauthFailed ? '새 계정으로 가입하기' : '새 계정으로 가입',
             denyButtonText: '기존 계정에 연결',
             cancelButtonText: '취소',
           });
@@ -144,7 +149,7 @@ import { createTocController } from '../article/toc';
           'email_already_registered': { icon: 'error', title: '계정 확인 필요', text: '같은 이메일 또는 공급자의 계정이 이미 등록되어 있습니다.' },
           'invalid_link_request': { icon: 'error', title: '연결 요청 오류', text: '계정 연결 요청이 올바르지 않습니다. 다시 시도해주세요.' },
           'link_request_expired': { icon: 'error', title: '연결 요청 만료', text: '계정 연결 요청이 만료되었습니다. 다시 로그인해주세요.' },
-          'account_link_reauth_failed': { icon: 'error', title: '계정 확인 실패', text: '기존 계정과 동일한 계정으로 다시 로그인해야 연결할 수 있습니다.' },
+          'account_link_reauth_failed': { icon: 'warning', title: '가입된 기존 계정 없음', text: '가입된 기존 계정이 확인되지 않습니다.' },
           'identity_in_use': { icon: 'error', title: '연결 불가', text: '이 로그인 수단은 이미 다른 계정에 연결되어 있습니다.' },
           'provider_already_linked': { icon: 'error', title: '연결 불가', text: '해당 공급자의 다른 로그인 계정이 이미 연결되어 있습니다.' },
         };

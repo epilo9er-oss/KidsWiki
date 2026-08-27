@@ -68,6 +68,22 @@ export function canOfferOAuthSignup(email: string | undefined, emailInUse: boole
     return !email?.trim() || !emailInUse;
 }
 
+export function buildOAuthAccountChoiceRedirect(
+    provider: string,
+    token: string,
+    canSignup: boolean,
+    reauthFailed = false,
+): string {
+    const query = new URLSearchParams({
+        info: 'oauth_account_choice',
+        provider,
+        identity_token: token,
+        can_signup: canSignup ? '1' : '0',
+    });
+    if (reauthFailed) query.set('reauth_failed', '1');
+    return `/?${query.toString()}`;
+}
+
 export interface PendingOAuthIdentity {
     profile: OAuthProfile;
     remember: boolean;

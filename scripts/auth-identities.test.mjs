@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+    buildOAuthAccountChoiceRedirect,
     canOfferOAuthSignup,
     createUserWithIdentity,
     getAccountDeletionDecision,
@@ -96,4 +97,18 @@ test('계정 병합 후보는 서로 다른 유효 사용자와 OAuth 소유권 
     });
     assert.equal(parsePendingAccountMerge(valid)?.absorbedIdentity.provider, 'naver');
     assert.equal(parsePendingAccountMerge(valid.replace('23456789ABCDEFGHJKLMNP', '123456789ABCDEFGHJKLMN')), null);
+});
+
+test('가입된 재인증 계정이 없으면 새 계정 가입 선택으로 돌아간다', () => {
+    const token = '00000000-0000-4000-8000-000000000001';
+    const redirect = new URL(
+        buildOAuthAccountChoiceRedirect('kakao', token, true, true),
+        'http://localhost',
+    );
+
+    assert.equal(redirect.searchParams.get('info'), 'oauth_account_choice');
+    assert.equal(redirect.searchParams.get('provider'), 'kakao');
+    assert.equal(redirect.searchParams.get('reauth_failed'), '1');
+    assert.equal(redirect.searchParams.get('identity_token'), token);
+    assert.equal(redirect.searchParams.get('can_signup'), '1');
 });

@@ -8,6 +8,7 @@ import { invalidateUserSessionCaches } from '../../middleware/session';
 import { dispatchDiscord } from '../../utils/webhook/discord';
 import { userJoined } from '../../utils/webhook/events/signup';
 import {
+    buildOAuthAccountChoiceRedirect,
     canOfferOAuthSignup,
     createUserWithIdentity,
     findUserByIdentity,
@@ -77,13 +78,11 @@ export async function handleOAuthLogin(c: Context<Env>, profile: OAuthProfile, r
                 .bind(normalizedProfile.email)
                 .first()
             : false;
-        const query = new URLSearchParams({
-            info: 'oauth_account_choice',
-            provider: profile.provider,
-            identity_token: token,
-            can_signup: canOfferOAuthSignup(normalizedProfile.email, emailInUse) ? '1' : '0',
-        });
-        return c.redirect(`/?${query.toString()}`);
+        return c.redirect(buildOAuthAccountChoiceRedirect(
+            profile.provider,
+            token,
+            canOfferOAuthSignup(normalizedProfile.email, emailInUse),
+        ));
     }
 
     await updateIdentityEmail(db, profile.provider, profile.uid, profile.email);
@@ -244,7 +243,18 @@ export async function handlePendingIdentityAttach(
 
     const target = await findUserByIdentity(c.env.DB, profile.provider, profile.uid);
     if (!target || target.role === 'deleted') {
-        return c.redirect('/?error=account_link_reauth_failed');
+        const pendingEmail = pending.profile.email?.trim();
+        const emailInUse = pendingEmail
+            ? !!await c.env.DB.prepare("SELECT 1 FROM users WHERE role != 'deleted' AND LOWER(email) = LOWER(?) LIMIT 1")
+                .bind(pendingEmail)
+                .first()
+            : false;
+        return c.redirect(buildOAuthAccountChoiceRedirect(
+            pending.profile.provider,
+            token,
+            canOfferOAuthSignup(pendingEmail, emailInUse),
+            true,
+        ));
     }
 
     await updateIdentityEmail(c.env.DB, profile.provider, profile.uid, profile.email);
