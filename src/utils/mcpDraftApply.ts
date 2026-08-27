@@ -43,6 +43,7 @@ import {
     evaluateEditAcl,
     getEditAclMinAgeDays,
 } from './editAcl';
+import { isTrustedContributor } from './contributorTrust';
 
 // applyDraftMutation 이 소비하는 draft 형태(제출 여부와 무관 — 데이터만 필요).
 export interface ApplyDraftInput {
@@ -488,6 +489,10 @@ export async function dispatchApplyEditTool(
     await ensureEditorNoteMigration(db);
     if (!rbac.can(user.role, 'wiki:edit')) {
         return toolError('Error: wiki:edit 권한이 필요합니다.');
+    }
+    const isAdmin = rbac.can(user.role, 'admin:access');
+    if (c.env.EDIT_REQUEST_ENABLED === 'true' && !isAdmin && !(await isTrustedContributor(db, user.id))) {
+        return toolError('Error: MCP 편집을 바로 반영하려면 신뢰 기여자 또는 관리자여야 합니다.');
     }
     // 방어선: 도구 노출은 mcp.ts 에서 게이팅하지만 디스패처에서도 설정을 재확인한다.
     if (!user.mcp_instant_apply) {

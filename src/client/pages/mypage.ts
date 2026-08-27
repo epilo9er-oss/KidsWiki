@@ -369,11 +369,13 @@ import { renderUserAvatar } from '../utils/avatar';
             document.getElementById('nameInput').value = window.currentUser.name;
             const privToggle = document.getElementById('picturePrivateToggle');
             if (privToggle) privToggle.checked = !!window.currentUser.picture_private;
-            // MCP 편집 즉시반영 설정은 wiki:edit 권한자(=MCP 편집 도구 사용 가능)에게만 노출한다.
+            // MCP 편집 즉시반영 설정은 직접 게시 가능한 신뢰 기여자·관리자에게만 노출한다.
             const canEditWiki = !!(window.currentUser.permissions && window.currentUser.permissions['wiki:edit']);
+            const canPublishDirectly = !!window.currentUser.trusted_contributor
+                || !!(window.currentUser.permissions && window.currentUser.permissions['admin:access']);
             const instantApplyWrap = document.getElementById('mcpInstantApplySetting');
             const instantApplyToggle = document.getElementById('mcpInstantApplyToggle');
-            if (instantApplyWrap) instantApplyWrap.style.display = canEditWiki ? '' : 'none';
+            if (instantApplyWrap) instantApplyWrap.style.display = canEditWiki && canPublishDirectly ? '' : 'none';
             if (instantApplyToggle) instantApplyToggle.checked = !!window.currentUser.mcp_instant_apply;
             document.getElementById('settingsSection').style.display = '';
         }

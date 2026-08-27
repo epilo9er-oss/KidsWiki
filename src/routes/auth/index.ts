@@ -41,6 +41,8 @@ import {
 import { isUserId, type UserId } from '../../shared/userId';
 import { resolveCanonicalUserId } from './accountMerge';
 import { getPublicUserContributions } from '../../utils/contributionStats';
+import { getContributorTrustSummary, isTrustedContributor } from '../../utils/contributorTrust';
+import { USER_BADGE_CATALOG, getPublicUserBadges } from '../../utils/userBadges';
 
 const auth = new Hono<Env>();
 
@@ -729,7 +731,7 @@ auth.get('/auth/logout', async (c) => {
  * permissions: 프런트엔드가 서버 RBAC와 동일하게 액션 버튼을 게이팅할 수 있도록
  * 주요 권한의 허용 여부를 불리언 맵으로 포함시킨다.
  */
-auth.get('/api/me', (c) => {
+auth.get('/api/me', async (c) => {
     const user = c.get('user');
     if (!user) {
         return c.json({ error: '로그인이 필요합니다.' }, 401);
@@ -744,6 +746,8 @@ auth.get('/api/me', (c) => {
     for (const key of permissionKeys) {
         permissions[key] = rbac.can(user.role, key);
     }
+    const trust = await getContributorTrustSummary(c.env.DB, user.id);
+    const badges = await getPublicUserBadges(c.env.DB, user.id);
     return c.json({
         id: user.id,
         name: user.name,
@@ -753,6 +757,8 @@ auth.get('/api/me', (c) => {
         mcp_instant_apply: !!user.mcp_instant_apply,
         role: user.role,
         created_at: user.created_at,
+        trusted_contributor: trust.trusted,
+        badges,
         permissions,
     });
 });
@@ -860,7 +866,7 @@ auth.put('/api/me/picture-privacy', requireAuth, async (c) => {
  * PUT /api/me/mcp-instant-apply
  * MCP 편집 즉시반영 허용 토글.
  *  - enabled=true  : mcp_instant_apply=1 — MCP 도구에 apply_edit(즉시 적용) 도구가 추가로 노출된다.
- *  - enabled=false : mcp_instant_apply=0 — commit_edit(승인 대기 제출)만 노출(기본).
+ *  - enabled=false : mcp_instant_apply=0 — 신뢰 기여자에게 commit_edit(본인 확인 제출)만 노출(기본).
  */
 auth.put('/api/me/mcp-instant-apply', requireAuth, async (c) => {
     const user = c.get('user')!;
@@ -871,6 +877,11 @@ auth.put('/api/me/mcp-instant-apply', requireAuth, async (c) => {
     }
     const enabled = body.enabled;
     const db = c.env.DB;
+    const rbac = c.get('rbac') as RBAC;
+    const isAdmin = rbac.can(user.role, 'admin:access');
+    if (enabled && c.env.EDIT_REQUEST_ENABLED === 'true' && !isAdmin && !(await isTrustedContributor(db, user.id))) {
+        return c.json({ error: 'MCP 편집 즉시반영은 신뢰 기여자 또는 관리자만 켤 수 있습니다.' }, 403);
+    }
     await ensureMcpInstantApplyMigration(db);
     await db
         .prepare('UPDATE users SET mcp_instant_apply = ? WHERE id = ?')
@@ -1038,6 +1049,8 @@ auth.get('/api/users/:id/profile', async (c) => {
                 adminUser.role = 'user';
             }
         }
+        const trust = await getContributorTrustSummary(db, adminUser.id);
+        const badges = await getPublicUserBadges(db, adminUser.id);
         return c.json({
             id: adminUser.id,
             name: adminUser.name,
@@ -1046,6 +1059,10 @@ auth.get('/api/users/:id/profile', async (c) => {
             role: adminUser.role,
             banned_until: adminUser.banned_until,
             is_admin: rbac.can(adminUser.role, 'admin:access'),
+            trusted_contributor: trust.trusted,
+            trust,
+            badges,
+            available_badges: Object.values(USER_BADGE_CATALOG),
         });
     }
 
@@ -1061,6 +1078,8 @@ auth.get('/api/users/:id/profile', async (c) => {
     // 역할 자체는 공개 응답에서 숨기되, 차단 사용자가 관리자에게만 소명 쪽지를 보낼 수
     // 있도록 안전한 관리자 여부 플래그만 노출한다(super_admin 은 이메일 기반 판별).
     const isAdminProfile = rbac.can(user.role, 'admin:access') || isSuperAdmin(user.email, c.env);
+    const trustedContributor = await isTrustedContributor(db, user.id);
+    const badges = await getPublicUserBadges(db, user.id);
 
     return c.json({
         id: user.id,
@@ -1068,6 +1087,8 @@ auth.get('/api/users/:id/profile', async (c) => {
         picture: user.picture,
         created_at: user.created_at,
         is_admin: isAdminProfile,
+        trusted_contributor: trustedContributor,
+        badges,
     });
 });
 

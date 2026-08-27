@@ -29,6 +29,7 @@ import { ensureMcpDraftsMigration } from '../utils/mcpDraftsMigration';
 import { ensureEditorNoteMigration } from '../utils/editorNoteMigration';
 import { validateMcpSummaryLength } from './admin-mcp';
 import { applyDraftMutation } from '../utils/mcpDraftApply';
+import { isTrustedContributor } from '../utils/contributorTrust';
 
 const mcpSubmissionsRoutes = new Hono<Env>();
 
@@ -297,6 +298,10 @@ mcpSubmissionsRoutes.post('/mcp-submissions/:id/approve', requireAuth, async (c)
     // 권한을 재검증해 권한 변경이 곧바로 반영되도록 한다 (제출 자체는 통과했더라도 승인 시점에 차단).
     if (!rbac.can(user.role, 'wiki:edit')) {
         return c.json({ error: 'forbidden', message: 'wiki:edit 권한이 필요합니다.' }, 403);
+    }
+    const isAdmin = rbac.can(user.role, 'admin:access');
+    if (c.env.EDIT_REQUEST_ENABLED === 'true' && !isAdmin && !(await isTrustedContributor(c.env.DB, user.id))) {
+        return c.json({ error: 'forbidden', message: 'MCP 제출안을 직접 반영하려면 신뢰 기여자 또는 관리자여야 합니다.' }, 403);
     }
     const draftId = Number(c.req.param('id'));
     if (!Number.isFinite(draftId) || draftId <= 0) return c.json({ error: 'invalid id' }, 400);

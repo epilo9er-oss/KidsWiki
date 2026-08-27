@@ -1098,7 +1098,9 @@ async function loadNotifications(append = false) {
                 'mention': 'mdi mdi-at',
                 'ws_invite': 'mdi mdi-account-multiple-plus-outline',
                 'ws_invite_accepted': 'mdi mdi-account-check-outline',
-                'mcp_instant_apply': 'mdi mdi-flash-outline'
+                'mcp_instant_apply': 'mdi mdi-flash-outline',
+                'contributor_trust': 'mdi mdi-account-check-outline',
+                'user_badge': 'mdi mdi-certificate-outline'
             };
             const icon = iconMap[n.type] || 'mdi mdi-bell';
             const timeAgo = _formatTimeAgo(n.created_at);

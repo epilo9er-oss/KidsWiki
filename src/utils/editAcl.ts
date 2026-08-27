@@ -166,31 +166,6 @@ export async function evaluateEditAcl(
 }
 
 /**
- * "신뢰 사용자" 판정 (사람 편집 보류 리비전 / pending changes 기능 전용).
- *
- * 보류 판정과 검토 권한 양쪽에서 공유한다.
- *   - 보류 판정(PUT /api/w/:slug): 편집자가 신뢰되지 않으면(=false) 편집을 검토 대기로 보류한다.
- *   - 검토 권한(pending-edits): 검토자가 해당 문서에 대해 신뢰되면(=true) 보류본을 검토할 수 있다.
- *
- * evaluateFlag 의 'aged'/'page_editor' SQL 프리미티브를 OR 로 재사용한다:
- *   isAdmin || aged(계정 나이 >= minAgeDays) || page_editor(pageId 에 이 user 의 revision 존재)
- * 'aged' 는 문서 무관(계정 상수)이라, aged/관리자는 전 문서에서 신뢰된다.
- * pageId 가 null(신규 문서 생성)이면 page_editor 는 false 이므로 isAdmin || aged 로만 판정된다.
- */
-export async function isTrustedEditor(
-    db: D1Database,
-    user: { id: string; created_at: number },
-    pageId: number | null,
-    minAgeDays: number,
-    isAdmin: boolean,
-): Promise<boolean> {
-    if (isAdmin) return true;
-    if (await evaluateFlag(db, 'aged', user, pageId, minAgeDays, isAdmin)) return true;
-    if (await evaluateFlag(db, 'page_editor', user, pageId, minAgeDays, isAdmin)) return true;
-    return false;
-}
-
-/**
  * settings.edit_acl_min_age_days 조회. 행이 없으면 0.
  */
 export async function getEditAclMinAgeDays(db: D1Database): Promise<number> {

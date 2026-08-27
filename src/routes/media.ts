@@ -6,6 +6,7 @@ import { RBAC } from '../utils/role';
 import { safeJSON } from '../utils/json';
 import { invalidatePageCache } from '../utils/cacheInvalidation';
 import { sqlContains } from '../utils/sqlText';
+import { isTrustedContributor } from '../utils/contributorTrust';
 
 const media = new Hono<Env>();
 
@@ -532,12 +533,18 @@ media.get('/api/media/doc/:filename/backlinks', async (c) => {
 
 /**
  * PUT /api/media/doc/:filename
- * 이미지 문서 content 수정 — 문서 편집 권한(wiki:edit) 보유자가 사용.
+ * 이미지 문서 content 수정 — 신뢰 기여자 또는 관리자가 사용.
  * body: { content: string }
  * 리비전은 남기지 않고 즉시 덮어쓴다.
  */
 media.put('/api/media/doc/:filename', requireAuth, requirePermission('wiki:edit'), async (c) => {
     const filename = c.req.param('filename');
+    const user = c.get('user')!;
+    const rbac = c.get('rbac') as RBAC;
+    const isAdmin = rbac.can(user.role, 'admin:access');
+    if (c.env.EDIT_REQUEST_ENABLED === 'true' && !isAdmin && !(await isTrustedContributor(c.env.DB, user.id))) {
+        return c.json({ error: '이미지 문서를 바로 수정하려면 신뢰 기여자 또는 관리자여야 합니다.' }, 403);
+    }
     let body: { content?: string; tags?: unknown };
     try {
         body = await c.req.json();

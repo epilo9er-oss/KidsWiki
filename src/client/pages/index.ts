@@ -990,7 +990,7 @@ import { createTocController } from '../article/toc';
         // 편집 요청 배지/드롭다운 — articleEditBtn 이 렌더된 뒤 실행해야 교체 대상이 존재한다.
         // 검토 가능한 편집 요청이 있고(서버 count>0, 검토 권한자 한정) 이 문서를 편집할 수 있는 사용자에게만
         // 노출(admin_only 잠금 문서는 제외 — 승인은 서버에서 ACL 재평가하므로 UI 도 일치). 상단 배너도 같은 검토 UI.
-        const _canReviewEdit = window.currentUser && (isAdmin || !_aclAdminOnly);
+        const _canReviewEdit = window.currentUser && isAdmin;
         if (_canReviewEdit) {
           const _pendingSlug = page.slug;
           const _editSlug = actionSlug;
@@ -2525,7 +2525,7 @@ async function reviewEditRequests(slug) {
 // 발견·반려할 UI 경로가 사라져 요청이 영구히 stuck 된다. 서버가 검토 권한자에게만 count>0 을 반환하므로 자연 게이팅.
 async function surfaceEditRequestsOn(boxId, slug) {
   const box = document.getElementById(boxId);
-  if (!box || !window.currentUser) return;
+  if (!box || !window.currentUser?.permissions?.['admin:access']) return;
   box.classList.add('d-none');
   box.innerHTML = '';
   try {

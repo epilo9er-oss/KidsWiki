@@ -74,6 +74,9 @@ test('중복 계정은 대표 계정으로 이동되고 예전 ID는 별칭으�
     sqlite.prepare("INSERT INTO page_watches (user_id, page_id, scope) VALUES (?, ?, 'this')").run(survivor, pageId);
     sqlite.prepare("INSERT INTO page_watches (user_id, page_id, scope) VALUES (?, ?, 'subtree')").run(absorbed, pageId);
     sqlite.prepare("INSERT INTO mcp_drafts (user_id, slug, action) VALUES (?, '다른-초안', 'create')").run(absorbed);
+    sqlite.prepare("INSERT INTO contributor_trust (user_id, status, mode) VALUES (?, 'trusted', 'trusted')").run(absorbed);
+    sqlite.prepare("INSERT INTO contributor_trust_events (user_id, event_type, source_type, source_id, document_key) VALUES (?, 'approved', 'test', '1', '병합-테스트')").run(absorbed);
+    sqlite.prepare("INSERT INTO user_badges (user_id, badge_key, assigned_by) VALUES (?, 'verified_expert', ?)").run(absorbed, survivor);
     sqlite.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES ('session-b', ?, 9999999999)").run(absorbed);
 
     const result = await mergeAccounts(db, survivor, absorbed);
@@ -84,6 +87,9 @@ test('중복 계정은 대표 계정으로 이동되고 예전 ID는 별칭으�
     assert.equal(sqlite.prepare('SELECT author_id FROM revisions WHERE page_id = ?').get(pageId).author_id, survivor);
     assert.equal(sqlite.prepare('SELECT scope FROM page_watches WHERE user_id = ? AND page_id = ?').get(survivor, pageId).scope, 'subtree');
     assert.equal(sqlite.prepare('SELECT user_id FROM mcp_drafts').get().user_id, survivor);
+    assert.equal(sqlite.prepare('SELECT status FROM contributor_trust WHERE user_id = ?').get(survivor).status, 'trusted');
+    assert.equal(sqlite.prepare('SELECT user_id FROM contributor_trust_events').get().user_id, survivor);
+    assert.equal(sqlite.prepare('SELECT user_id FROM user_badges').get().user_id, survivor);
     assert.equal(sqlite.prepare('SELECT role FROM users WHERE id = ?').get(absorbed).role, 'deleted');
     assert.equal(await resolveCanonicalUserId(db, absorbed), survivor);
     assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(absorbed).count, 0);

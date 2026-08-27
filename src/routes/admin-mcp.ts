@@ -139,7 +139,7 @@ async function enforceMcpEditAcl(
 }
 
 // ────────────────────────────────────────────────────────────────
-// 일반 유저(`wiki:edit`) 도 호출 가능한 읽기 도구.
+// MCP 편집이 허용된 신뢰 기여자·관리자가 호출 가능한 읽기 도구.
 // (draft 흐름·과거 리비전 조회는 편집과 짝을 이루므로 wiki:edit 권한자에게 노출.)
 // ────────────────────────────────────────────────────────────────
 
@@ -194,7 +194,7 @@ export const ADMIN_ONLY_READ_TOOL_DEFS: McpToolDef[] = [
 ];
 
 // ────────────────────────────────────────────────────────────────
-// 일반 유저(`wiki:edit`) 도 호출 가능한 편집 도구 정의.
+// MCP 편집이 허용된 신뢰 기여자·관리자가 호출 가능한 편집 도구 정의.
 // (revert_page 는 본질적으로 새 리비전을 만드는 편집이므로 user 계층에 둔다.)
 // ────────────────────────────────────────────────────────────────
 
@@ -452,7 +452,7 @@ function unixToIso(unix: number | null | undefined): string | null {
     return new Date(unix * 1000).toISOString();
 }
 
-// 추가 읽기 도구 디스패처 — guest 에게는 노출하지 않으며, 일반 유저(`wiki:edit`) /
+// 추가 읽기 도구 디스패처 — guest 에게는 노출하지 않으며, 신뢰 기여자(`wiki:edit`) /
 // 관리자(`admin:access`) 에게 단계적으로 노출된다. 진입 시 visible-tools 검사로 차단되지만
 // 디스패처 자체에서도 권한을 다시 확인해 방어선을 둔다.
 export async function dispatchAdminReadTool(c: Context<Env>, user: User, toolName: string, args: any): Promise<ToolResult | null> {
@@ -2246,7 +2246,7 @@ export async function dispatchAdminEditTool(c: Context<Env>, user: User, toolNam
     return null;
 }
 
-// 일반 유저(`wiki:edit`) 에게 추가로 노출되는 도구 묶음 (읽기 + draft 편집 + revert).
+// 신뢰 기여자(`wiki:edit`) 에게 추가로 노출되는 도구 묶음 (읽기 + draft 편집 + revert).
 export const USER_TOOL_DEFS: McpToolDef[] = [
     ...USER_READ_TOOL_DEFS,
     ...USER_EDIT_TOOL_DEFS,
@@ -2258,7 +2258,7 @@ export const ADMIN_ONLY_TOOL_DEFS: McpToolDef[] = [
     ...ADMIN_ONLY_EDIT_TOOL_DEFS,
 ];
 
-// /api/mcp 의 information 도구가 일반 유저(`wiki:edit`) 에게 추가로 덧붙여 보여줄 가이드.
+// /api/mcp 의 information 도구가 신뢰 기여자(`wiki:edit`) 에게 추가로 덧붙여 보여줄 가이드.
 // 관리자에게도 동일하게 노출된다.
 export function buildUserEditInformationSuffix(userName: string): string {
     const readIntro = `\n\n## 편집 보조 읽기 도구 (현재 인증된 사용자: ${userName})\n${USER_READ_TOOL_DEFS.map(t => `- ${t.name}`).join('\n')}`;

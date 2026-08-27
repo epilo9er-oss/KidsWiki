@@ -146,15 +146,27 @@ import { renderUserAvatar } from '../utils/avatar';
                   </tr>
                 </thead>
                 <tbody>
-                  ${topics.map((topic) => `
+                  ${topics.map((topic, index) => `
                     <tr>
                       <th scope="row">${window.escapeHtml(topic.category)}</th>
                       <td class="text-end">${Number(topic.document_count).toLocaleString()}</td>
-                      <td class="text-end">${Number(topic.contributor_count).toLocaleString()}</td>
+                      <td class="text-end">
+                        <button type="button" id="topicContributorsButton${index}" class="btn btn-sm btn-outline-secondary text-nowrap"
+                          data-topic-category="${window.escapeHtml(topic.category)}" data-topic-detail="topicContributors${index}"
+                          aria-expanded="false" aria-controls="topicContributors${index}" onclick="toggleTopicContributors(this)">
+                          ${Number(topic.contributor_count).toLocaleString()}명
+                          <i class="mdi mdi-chevron-down" aria-hidden="true"></i>
+                        </button>
+                      </td>
                       <td class="text-end">${Number(topic.edit_count).toLocaleString()}</td>
                       <td class="text-end text-nowrap">${topic.last_contributed_at
                         ? new Date(topic.last_contributed_at * 1000).toLocaleDateString("ko-KR")
                         : "-"}</td>
+                    </tr>
+                    <tr id="topicContributors${index}" class="d-none" data-topic-detail-row>
+                      <td colspan="5" class="p-0">
+                        <div class="p-3 bg-body-tertiary" data-topic-contributors aria-live="polite"></div>
+                      </td>
                     </tr>
                   `).join("")}
                 </tbody>
@@ -168,6 +180,72 @@ import { renderUserAvatar } from '../utils/avatar';
             title: "분야 기여 현황을 불러오지 못했습니다",
             text: "페이지를 새로고침해 다시 시도해 주세요.",
           });
+        }
+      }
+
+      function toggleTopicContributors(button) {
+        const detail = document.getElementById(button.dataset.topicDetail);
+        const opening = detail.classList.contains("d-none");
+
+        document.querySelectorAll("[data-topic-detail-row]").forEach((row) => row.classList.add("d-none"));
+        document.querySelectorAll("[data-topic-detail]").forEach((trigger) => {
+          trigger.setAttribute("aria-expanded", "false");
+          const icon = trigger.querySelector("i");
+          if (icon) icon.className = "mdi mdi-chevron-down";
+        });
+        if (!opening) return;
+
+        detail.classList.remove("d-none");
+        button.setAttribute("aria-expanded", "true");
+        const icon = button.querySelector("i");
+        if (icon) icon.className = "mdi mdi-chevron-up";
+        const container = detail.querySelector("[data-topic-contributors]");
+        if (container.dataset.loaded !== "true") loadTopicContributors(button, 0, false);
+      }
+
+      async function loadTopicContributors(trigger, offset = 0, append = false) {
+        const detail = document.getElementById(trigger.dataset.topicDetail);
+        const container = detail.querySelector("[data-topic-contributors]");
+        if (!append) {
+          container.innerHTML = '<div class="d-flex align-items-center gap-2 text-muted" role="status"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>기여자를 불러오는 중...</span></div>';
+        }
+
+        try {
+          const category = trigger.dataset.topicCategory;
+          const res = await fetch(`/api/admin/contribution-topics/${encodeURIComponent(category)}/contributors?limit=20&offset=${offset}`);
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+
+          if (!append) {
+            container.innerHTML = '<div class="list-group list-group-flush" data-topic-contributor-list></div><div class="pt-3" data-topic-contributor-more></div>';
+          }
+          const list = container.querySelector("[data-topic-contributor-list]");
+          list.insertAdjacentHTML("beforeend", (data.contributors || []).map((contributor, index) => `
+            <div class="list-group-item bg-transparent px-0 d-flex flex-column flex-sm-row justify-content-between gap-2">
+              <a href="/profile/${encodeURIComponent(contributor.user_id)}" class="text-decoration-none">
+                <span class="badge rounded-pill text-bg-secondary me-2">${offset + index + 1}</span>${window.escapeHtml(contributor.name)}
+              </a>
+              <span class="small text-muted text-sm-end text-nowrap">
+                문서 ${Number(contributor.document_count).toLocaleString()} · 편집 ${Number(contributor.edit_count).toLocaleString()} · ${contributor.last_contributed_at
+                  ? new Date(contributor.last_contributed_at * 1000).toLocaleDateString("ko-KR")
+                  : "-"}
+              </span>
+            </div>
+          `).join(""));
+
+          const more = container.querySelector("[data-topic-contributor-more]");
+          const nextOffset = offset + (data.contributors || []).length;
+          more.innerHTML = data.has_more
+            ? `<button type="button" class="btn btn-sm btn-outline-secondary" onclick="loadTopicContributors(document.getElementById('${trigger.id}'), ${nextOffset}, true)">더 보기</button>`
+            : `<span class="small text-muted">총 ${Number(data.total || 0).toLocaleString()}명</span>`;
+          container.dataset.loaded = "true";
+        } catch (e) {
+          const retry = `<button type="button" class="btn btn-sm btn-outline-secondary" onclick="loadTopicContributors(document.getElementById('${trigger.id}'), ${offset}, ${append})">다시 시도</button>`;
+          if (append) {
+            container.querySelector("[data-topic-contributor-more]").innerHTML = `<span class="small text-danger me-2">추가 기여자를 불러오지 못했습니다.</span>${retry}`;
+          } else {
+            container.innerHTML = `<div class="small text-danger mb-2">기여자를 불러오지 못했습니다.</div>${retry}`;
+          }
         }
       }
 
@@ -1261,3 +1339,5 @@ window.loadAdminLogs = loadAdminLogs;
 window.goToAdminLogPage = goToAdminLogPage;
 window.loadAnalyticsDashboard = loadAnalyticsDashboard;
 window.refreshAnalytics = refreshAnalytics;
+window.toggleTopicContributors = toggleTopicContributors;
+window.loadTopicContributors = loadTopicContributors;

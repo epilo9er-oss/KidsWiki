@@ -119,7 +119,7 @@ SELECTED_ICONS_ONLY = "false" # false 권장, true시 public/icons.json에 있�
 MCP_MODE = "open" # MCP 서버 모드: "disabled" (사용 안 함, 기본값), "open" (전체 개방)
 ALLOW_CRAWL = "true" # robots.txt/사이트맵 관리: "true" (크롤링 허용, 사이트맵 자동 생성, 봇 정책은 src/robots-txt.ts 직접 수정), "false" (전체 차단, 사이트맵 비활성화)
 ENABLE_CONCURRENT_EDIT_DETECTION = "true" # 문서 동시편집 감지 (KV)
-EDIT_REQUEST_ENABLED = "true" # 편집 요청: "true" 시 ACL 미달 사용자의 편집을 편집 요청으로 보류(검토자 승인/반려). edit_acl_min_age_days > 0 필요.
+EDIT_REQUEST_ENABLED = "true" # 편집 요청: "true" 시 일반 사용자의 편집은 관리자 검토로 보류하고, 신뢰 기여자·관리자 편집은 즉시 반영. edit_acl_min_age_days는 문서별 aged ACL에만 사용.
 WIKI_VISIBILITY = "open" # 문서 열람 권한: "open" (비로그인 사용자도 열람 가능), "closed" (로그인 필요)
 LAYOUT_MODE = "default" # 문서 조회 페이지 레이아웃 모드: "default" (우측 사이드바에 트렌딩/최근 변경), "left-toc" (좌측 사이드바에 현재 문서 목차, 우측 숨김), "right-toc"(좌측 사이드바에 현재 목차, 좌측 숨김) "docs" (좌측=슬래시 그룹 문서 트리, 우측=현재 문서 목차, 기술 문서 스타일), "wide" (좌우 사이드바 숨김, 본문 중앙 풀폭 몰입 읽기, 목차는 플로팅 버튼)
 WIKI_THEME = "kiwi-slice" # 컬러 테마(스킨): "default" (빌트인 색). 추가 스킨은 scripts/themes/<이름>.mjs 파일로 정의(index.mjs 에 등록) 후 이름 지정 시 빌드 타임에 색 토큰 교체. 멀티 스킨(WIKI_THEMES) 모드에서는 사용자 미선택 시 기본 선택 스킨으로 쓰인다. 스킨이 다크 모드 전용(darkOnly, 예: "astro")이면 활성인 동안 밝기가 다크로 고정되고 라이트/다크 토글이 숨겨진다.

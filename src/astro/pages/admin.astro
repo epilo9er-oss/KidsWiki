@@ -959,10 +959,10 @@ import Footer from '../components/Footer.astro';
               <h6 class="fw-bold mb-3">편집 요청</h6>
               <div class="mb-4">
                 <small class="text-muted d-block">
-                  ACL 미달 사용자의 편집을 즉시 반영하지 않고 편집 요청으로 보류해, 검토자(관리자·신뢰 사용자)가
-                  문서 페이지에서 승인/반려하는 기능입니다. 이 토글은 배포 설정(<code>wrangler.toml</code> 의
-                  <code>EDIT_REQUEST_ENABLED</code>)으로 이전되었습니다. <code>edit_acl_min_age_days</code> 가
-                  0 보다 커야 보류가 발생합니다.
+                  일반 사용자의 편집을 요청으로 보류하고 관리자가 승인/반려하는 기능입니다. 신뢰 기여자와 관리자의
+                  편집은 바로 반영됩니다. 이 토글은 배포 설정(<code>wrangler.toml</code> 의
+                  <code>EDIT_REQUEST_ENABLED</code>)으로 관리하며, <code>edit_acl_min_age_days</code>는
+                  문서별 <code>aged</code> ACL에만 사용합니다.
                 </small>
               </div>
 

@@ -61,7 +61,17 @@ import type {
     AnnouncementMoveRequest,
 } from '../shared/api/announcement';
 import { createUserWithIdentity, findUserByIdentity } from './auth/identities';
-import { getPublicTopicContributionOverview } from '../utils/contributionStats';
+import { getPublicTopicContributionOverview, getPublicTopicContributors } from '../utils/contributionStats';
+import {
+    recordContributorTrustEvent,
+    setContributorTrustMode,
+    type ContributorTrustMode,
+} from '../utils/contributorTrust';
+import {
+    USER_BADGE_CATALOG,
+    isUserBadgeKey,
+    setUserBadge,
+} from '../utils/userBadges';
 
 const adminRoutes = new Hono<Env>();
 
@@ -70,6 +80,112 @@ adminRoutes.use('*', requireAdmin);
 adminRoutes.get('/contribution-topics', async (c) => {
     const topics = await getPublicTopicContributionOverview(c.env.DB);
     return c.json({ topics });
+});
+
+adminRoutes.get('/contribution-topics/:category/contributors', async (c) => {
+    const category = c.req.param('category').trim();
+    if (!category) return c.json({ error: '분야가 비어 있습니다.' }, 400);
+    const limit = Math.min(50, Math.max(1, Number.parseInt(c.req.query('limit') || '20', 10) || 20));
+    const offset = Math.max(0, Number.parseInt(c.req.query('offset') || '0', 10) || 0);
+    const result = await getPublicTopicContributors(c.env.DB, category, limit, offset);
+    return c.json({ ...result, has_more: offset + result.contributors.length < result.total });
+});
+
+adminRoutes.put('/users/:id/trust', async (c) => {
+    const targetUserId = c.req.param('id');
+    const body = await c.req.json<{ mode?: unknown }>().catch(() => ({} as { mode?: unknown }));
+    if (body.mode !== 'auto' && body.mode !== 'trusted' && body.mode !== 'standard') {
+        return c.json({ error: '신뢰 모드는 auto, trusted, standard 중 하나여야 합니다.' }, 400);
+    }
+
+    const target = await c.env.DB.prepare("SELECT id, name FROM users WHERE id = ? AND role != 'deleted'")
+        .bind(targetUserId).first<{ id: string; name: string }>();
+    if (!target) return c.json({ error: '유저를 찾을 수 없습니다.' }, 404);
+
+    const mode = body.mode as ContributorTrustMode;
+    const actor = c.get('user')!;
+    const update = await setContributorTrustMode(c.env.DB, target.id, mode);
+    writeAdminLog(c, 'contributor_trust_mode',
+        `유저 #${target.id}(${target.name})의 신뢰 모드를 '${mode}'(으)로 변경`, actor.id);
+    c.executionCtx.waitUntil(createNotification(c.env, c.executionCtx, {
+        userId: target.id,
+        type: 'contributor_trust',
+        content: update.summary.trusted
+            ? '관리자가 신뢰 기여자 상태를 적용했습니다.'
+            : '관리자가 일반 기여자 상태를 적용했습니다. 편집은 검토 후 반영됩니다.',
+        link: '/mypage',
+    }).catch(() => {}));
+    return c.json(update);
+});
+
+adminRoutes.post('/users/:id/trust-events', async (c) => {
+    const targetUserId = c.req.param('id');
+    const body = await c.req.json<{
+        severity?: unknown;
+        reason?: unknown;
+        document_key?: unknown;
+    }>().catch(() => ({} as { severity?: unknown; reason?: unknown; document_key?: unknown }));
+    if (body.severity !== 'problematic' && body.severity !== 'severe') {
+        return c.json({ error: '문제 수준은 problematic 또는 severe여야 합니다.' }, 400);
+    }
+    const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 500) : '';
+    if (!reason) return c.json({ error: '문제 기여 사유를 입력해주세요.' }, 400);
+    const documentKey = typeof body.document_key === 'string'
+        ? body.document_key.trim().slice(0, 200) || null
+        : null;
+
+    const target = await c.env.DB.prepare("SELECT id, name FROM users WHERE id = ? AND role != 'deleted'")
+        .bind(targetUserId).first<{ id: string; name: string }>();
+    if (!target) return c.json({ error: '유저를 찾을 수 없습니다.' }, 404);
+
+    const actor = c.get('user')!;
+    const update = await recordContributorTrustEvent(c.env.DB, {
+        userId: target.id,
+        eventType: body.severity,
+        sourceType: 'admin_assessment',
+        sourceId: crypto.randomUUID(),
+        documentKey,
+        actorId: actor.id,
+        reason,
+    });
+    writeAdminLog(c, 'contributor_trust_issue',
+        `유저 #${target.id}(${target.name}) 문제 기여 기록(${body.severity}): ${reason}`, actor.id);
+    c.executionCtx.waitUntil(createNotification(c.env, c.executionCtx, {
+        userId: target.id,
+        type: 'contributor_trust',
+        content: update.transition === 'demoted'
+            ? `문제 기여가 기록되어 일반 기여자로 변경되었습니다. 사유: ${reason}`
+            : `문제 기여가 기록되었습니다. 사유: ${reason}`,
+        link: '/mypage',
+    }).catch(() => {}));
+    return c.json(update);
+});
+
+adminRoutes.put('/users/:id/badges/:badgeKey', async (c) => {
+    const targetUserId = c.req.param('id');
+    const badgeKey = c.req.param('badgeKey');
+    if (!isUserBadgeKey(badgeKey)) return c.json({ error: '지원하지 않는 뱃지입니다.' }, 400);
+    const body = await c.req.json<{ enabled?: unknown }>().catch(() => ({} as { enabled?: unknown }));
+    if (typeof body.enabled !== 'boolean') {
+        return c.json({ error: 'enabled 값은 boolean이어야 합니다.' }, 400);
+    }
+
+    const target = await c.env.DB.prepare("SELECT id, name FROM users WHERE id = ? AND role != 'deleted'")
+        .bind(targetUserId).first<{ id: string; name: string }>();
+    if (!target) return c.json({ error: '유저를 찾을 수 없습니다.' }, 404);
+
+    const actor = c.get('user')!;
+    const badges = await setUserBadge(c.env.DB, target.id, badgeKey, body.enabled, actor.id);
+    const badge = USER_BADGE_CATALOG[badgeKey];
+    writeAdminLog(c, 'user_badge',
+        `유저 #${target.id}(${target.name}) ${badge.label} 뱃지 ${body.enabled ? '부여' : '회수'}`, actor.id);
+    c.executionCtx.waitUntil(createNotification(c.env, c.executionCtx, {
+        userId: target.id,
+        type: 'user_badge',
+        content: `${badge.label} 뱃지가 ${body.enabled ? '부여' : '회수'}되었습니다.`,
+        link: `/profile/${encodeURIComponent(target.id)}`,
+    }).catch(() => {}));
+    return c.json({ badges });
 });
 
 // ── 관리 로그 기록 헬퍼 ──

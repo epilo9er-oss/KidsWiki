@@ -16,8 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
   -- 프로필 사진 비공개 여부. 1 이면 picture 가 지정된 정적 기본 아바타(/avatar-default.svg)로 고정되고
   -- OAuth 재로그인/사진 갱신이 picture 를 덮어쓰지 않는다(공급자 사진 누설 방지).
   picture_private INTEGER NOT NULL DEFAULT 0,
-  -- MCP 편집 즉시반영 허용 여부. 1 이면 이 사용자의 MCP 도구 스키마에 즉시 적용용 apply_edit 도구가
-  -- 추가로 노출되어, commit_edit(승인 대기 제출) 대신 새 리비전을 곧바로 만들 수 있다. 기본 0(제출만).
+  -- MCP 편집 즉시반영 선호. 편집 요청 기능이 켜진 환경에서는 신뢰 기여자·관리자일 때만 실제 적용된다.
   mcp_instant_apply INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER DEFAULT (unixepoch()),
   role TEXT DEFAULT 'user',  -- 'user', 'discussion_manager', 'admin', 'super_admin', 'banned', 'deleted'
@@ -26,6 +25,47 @@ CREATE TABLE IF NOT EXISTS users (
   UNIQUE(provider, uid)
 );
 CREATE INDEX IF NOT EXISTS idx_users_created ON users(created_at DESC);
+
+-- 위키 기여 신뢰 상태. 운영 역할(users.role) 및 공개 자격 뱃지와 독립적이다.
+CREATE TABLE IF NOT EXISTS contributor_trust (
+  user_id          TEXT NOT NULL PRIMARY KEY,
+  status           TEXT NOT NULL DEFAULT 'standard' CHECK(status IN ('standard', 'trusted')),
+  mode             TEXT NOT NULL DEFAULT 'auto' CHECK(mode IN ('auto', 'trusted', 'standard')),
+  cycle_started_at INTEGER NOT NULL DEFAULT 0,
+  cooldown_until   INTEGER NOT NULL DEFAULT 0,
+  trusted_since    INTEGER,
+  updated_at       INTEGER NOT NULL DEFAULT (unixepoch()),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- 승인·반려·문제 기여 평가 원장. 자동 승격·강등의 설명 가능한 근거로 사용한다.
+CREATE TABLE IF NOT EXISTS contributor_trust_events (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id       TEXT NOT NULL,
+  event_type    TEXT NOT NULL CHECK(event_type IN ('approved', 'rejected', 'problematic', 'severe')),
+  source_type   TEXT NOT NULL,
+  source_id     TEXT NOT NULL,
+  document_key TEXT,
+  actor_id      TEXT,
+  reason        TEXT,
+  -- 정책상 사건 시각. 승인·반려는 요청의 마지막 제출 시각, 문제 기록은 관리자가 기록한 시각이다.
+  created_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  UNIQUE(user_id, event_type, source_type, source_id)
+);
+CREATE INDEX IF NOT EXISTS idx_contributor_trust_events_user_created
+  ON contributor_trust_events(user_id, created_at DESC);
+
+-- 공개 사용자 뱃지. badge_key의 표시 정보와 허용 목록은 애플리케이션 카탈로그가 관리한다.
+CREATE TABLE IF NOT EXISTS user_badges (
+  user_id     TEXT NOT NULL,
+  badge_key   TEXT NOT NULL COLLATE BINARY,
+  assigned_by TEXT,
+  assigned_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  PRIMARY KEY (user_id, badge_key),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_badges_key ON user_badges(badge_key, assigned_at DESC);
 
 -- 한 사용자 계정에 연결된 OAuth 로그인 수단.
 -- users.provider/uid 는 기존 코드 호환을 위한 기본 로그인 수단으로 유지하고,
@@ -428,12 +468,12 @@ CREATE INDEX IF NOT EXISTS idx_mcp_drafts_submitted
   WHERE submitted_at IS NOT NULL;
 
 -- 편집 요청(내부적으로 pending_edits) 검토 대기본.
--- wrangler.toml `EDIT_REQUEST_ENABLED="true"` 일 때, 신뢰되지 않은 사용자의 PUT /api/w/:slug 편집은
+-- wrangler.toml `EDIT_REQUEST_ENABLED="true"` 일 때, 일반 사용자의 PUT /api/w/:slug 편집은
 -- 즉시 리비전이 되지 않고 이 테이블에 보관된다 (revisions/pages/FTS/version 시퀀스 미오염).
--- 공개 화면은 마지막 승인 리비전을 계속 노출하고, 관리자 또는 신뢰 사용자가 검토 후
+-- 공개 화면은 마지막 승인 리비전을 계속 노출하고, 관리자가 검토 후
 -- 승인(=원 편집자 author 로 정식 리비전 생성) 또는 반려(=폐기) 한다.
 --   action: 'create' (page_id NULL, base_version 0) | 'update' (대상 page.id, base_revision_id/base_version 스냅샷)
---   author_id: 보류를 올린 원(미신뢰) 편집자. 승인 시 이 사용자가 리비전 author 가 된다.
+--   author_id: 보류를 올린 일반 편집자. 승인 시 이 사용자가 리비전 author 가 된다.
 --   UNIQUE(author_id, slug): 작성자×슬러그당 1건 — 재제출 시 UPSERT 로 최신 내용으로 교체.
 CREATE TABLE IF NOT EXISTS pending_edits (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,

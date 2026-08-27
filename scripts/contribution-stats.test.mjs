@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
     getPublicTopicContributionOverview,
+    getPublicTopicContributors,
     getPublicUserContributions,
 } from '../src/utils/contributionStats.ts';
 
@@ -78,4 +79,21 @@ test('admin contribution overview uses the same public-only rules', async () => 
     assertPublicOnly(queries[0]);
     assert.match(queries[0], /u\.role <> 'deleted'/);
     assert.deepEqual(bindings, [[10]]);
+});
+
+test('topic contributors are ranked by contributed documents and paginated', async () => {
+    const { db, queries, bindings } = fakeDb([
+        { results: [{ user_id: 'user-1', name: '기여자', document_count: '4', edit_count: '7', last_contributed_at: '40' }] },
+        { first: { total: '3' } },
+    ]);
+
+    const result = await getPublicTopicContributors(db, '수면', 20, 0);
+
+    assert.deepEqual(result, {
+        contributors: [{ user_id: 'user-1', name: '기여자', document_count: 4, edit_count: 7, last_contributed_at: 40 }],
+        total: 3,
+    });
+    queries.forEach(assertPublicOnly);
+    assert.match(queries[0], /ORDER BY document_count DESC, edit_count DESC/);
+    assert.deepEqual(bindings, [['수면', 20, 0], ['수면']]);
 });

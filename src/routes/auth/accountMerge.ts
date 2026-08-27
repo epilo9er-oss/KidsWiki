@@ -1,5 +1,7 @@
 import { isUserId, type UserId } from '../../shared/userId.ts';
 import { isSuperAdminEmail } from '../../utils/auth.ts';
+import { ensureContributorTrustSchema, recalculateContributorTrust } from '../../utils/contributorTrust.ts';
+import { ensureUserBadgesSchema } from '../../utils/userBadges.ts';
 
 export interface PendingAccountMerge {
     survivorUserId: UserId;
@@ -201,6 +203,9 @@ export async function mergeAccounts(
     if (draftConflict) return empty('draft_conflict');
     if (pendingEditConflict) return empty('pending_edit_conflict');
 
+    await ensureContributorTrustSchema(db);
+    await ensureUserBadgesSchema(db);
+
     const sessionRows = await db.prepare('SELECT id FROM sessions WHERE user_id = ?')
         .bind(absorbedUserId)
         .all<{ id: string }>();
@@ -249,6 +254,23 @@ export async function mergeAccounts(
         db.prepare('UPDATE admin_log SET user = ? WHERE user = ?').bind(survivorUserId, absorbedUserId),
         db.prepare('UPDATE mcp_drafts SET user_id = ? WHERE user_id = ?').bind(survivorUserId, absorbedUserId),
         db.prepare('UPDATE pending_edits SET author_id = ? WHERE author_id = ?').bind(survivorUserId, absorbedUserId),
+        db.prepare(`INSERT INTO contributor_trust
+                        (user_id, status, mode, cycle_started_at, cooldown_until, trusted_since, updated_at)
+                    SELECT ?, status, mode, cycle_started_at, cooldown_until, trusted_since, updated_at
+                    FROM contributor_trust WHERE user_id = ?
+                    ON CONFLICT(user_id) DO NOTHING`)
+            .bind(survivorUserId, absorbedUserId),
+        db.prepare(`INSERT OR IGNORE INTO contributor_trust_events
+                        (user_id, event_type, source_type, source_id, document_key, actor_id, reason, created_at)
+                    SELECT ?, event_type, source_type, source_id, document_key, actor_id, reason, created_at
+                    FROM contributor_trust_events WHERE user_id = ?`)
+            .bind(survivorUserId, absorbedUserId),
+        db.prepare('DELETE FROM contributor_trust_events WHERE user_id = ?').bind(absorbedUserId),
+        db.prepare('DELETE FROM contributor_trust WHERE user_id = ?').bind(absorbedUserId),
+        db.prepare(`INSERT OR IGNORE INTO user_badges (user_id, badge_key, assigned_by, assigned_at)
+                    SELECT ?, badge_key, assigned_by, assigned_at FROM user_badges WHERE user_id = ?`)
+            .bind(survivorUserId, absorbedUserId),
+        db.prepare('DELETE FROM user_badges WHERE user_id = ?').bind(absorbedUserId),
         db.prepare('UPDATE signup_requests SET reviewed_by = ? WHERE reviewed_by = ?').bind(survivorUserId, absorbedUserId),
         db.prepare(`INSERT OR IGNORE INTO discussion_mutes (user_id, discussion_id, created_at)
                     SELECT ?, discussion_id, created_at FROM discussion_mutes WHERE user_id = ?`)
@@ -281,6 +303,9 @@ export async function mergeAccounts(
                     WHERE id = ?`).bind(absorbedUserId),
     ];
     await db.batch(statements);
+    await recalculateContributorTrust(db, survivorUserId).catch(error => {
+        console.error('Failed to recalculate contributor trust after account merge:', error);
+    });
 
     return { status: 'merged', revokedSessionIds, survivorUserId, absorbedUserId };
 }

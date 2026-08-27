@@ -18,6 +18,14 @@ export interface TopicContributionOverview extends TopicContribution {
     contributor_count: number;
 }
 
+export interface TopicContributor {
+    user_id: string;
+    name: string;
+    document_count: number;
+    edit_count: number;
+    last_contributed_at: number;
+}
+
 const PUBLIC_CONTRIBUTION_FILTER = `
     r.author_id IS NOT NULL
     AND r.is_virtual = 0
@@ -110,4 +118,51 @@ export async function getPublicTopicContributionOverview(
         edit_count: Number(row.edit_count || 0),
         last_contributed_at: Number(row.last_contributed_at || 0),
     }));
+}
+
+/** 관리자 분야 상세용: 기여 문서 수가 많은 사용자부터 페이지 단위로 반환한다. */
+export async function getPublicTopicContributors(
+    db: D1Database,
+    category: string,
+    limit = 20,
+    offset = 0,
+): Promise<{ contributors: TopicContributor[]; total: number }> {
+    const [listResult, countResult] = await Promise.all([
+        db.prepare(
+            `SELECT u.id AS user_id, u.name,
+                    COUNT(DISTINCT p.id) AS document_count,
+                    COUNT(DISTINCT r.id) AS edit_count,
+                    MAX(r.created_at) AS last_contributed_at
+             FROM revisions r
+             JOIN pages p ON p.id = r.page_id
+             JOIN page_categories pc ON pc.page_id = p.id
+             JOIN users u ON u.id = r.author_id
+             WHERE ${PUBLIC_CONTRIBUTION_FILTER}
+               AND u.role <> 'deleted'
+               AND pc.category = ?
+             GROUP BY u.id, u.name
+             ORDER BY document_count DESC, edit_count DESC, last_contributed_at DESC, u.name COLLATE NOCASE
+             LIMIT ? OFFSET ?`
+        ).bind(category, limit, offset).all<TopicContributor>(),
+        db.prepare(
+            `SELECT COUNT(DISTINCT r.author_id) AS total
+             FROM revisions r
+             JOIN pages p ON p.id = r.page_id
+             JOIN page_categories pc ON pc.page_id = p.id
+             JOIN users u ON u.id = r.author_id
+             WHERE ${PUBLIC_CONTRIBUTION_FILTER}
+               AND u.role <> 'deleted'
+               AND pc.category = ?`
+        ).bind(category).first<{ total: number }>(),
+    ]);
+
+    return {
+        contributors: (listResult.results || []).map(row => ({
+            ...row,
+            document_count: Number(row.document_count || 0),
+            edit_count: Number(row.edit_count || 0),
+            last_contributed_at: Number(row.last_contributed_at || 0),
+        })),
+        total: Number(countResult?.total || 0),
+    };
 }

@@ -1,18 +1,14 @@
 // 편집 요청(내부 식별자는 pending_edits 유지) 검토 워크플로우.
 //
-// wrangler.toml `EDIT_REQUEST_ENABLED="true"` 일 때, 신뢰되지 않은 사용자의 PUT /api/w/:slug 편집은
+// wrangler.toml `EDIT_REQUEST_ENABLED="true"` 일 때, 일반 사용자의 PUT /api/w/:slug 편집은
 // 즉시 리비전이 되지 않고 pending_edits 에 보관된다(holdPendingEdit, wiki.ts). 본 라우트는
-// 그 편집 요청을 **검토자**(관리자 또는 신뢰 사용자) 가 검토·승인·반려하는 HTTP 인터페이스다.
+// 그 편집 요청을 관리자가 검토·승인·반려하는 HTTP 인터페이스다.
 // 검토 UI 는 문서 열람 페이지(편집 버튼 배지/드롭다운)에서 제공된다.
 //
 // MCP 제출안(mcp-submissions.ts)이 "자기 검토"(작성자=검토자) 인 것과 달리, 편집 요청은
-// 반달 대응이 목적이므로 **작성자 본인은 검토에서 제외**되고 검토자는 신뢰 사용자/관리자다.
+// 반달 대응이 목적이므로 **작성자 본인은 검토에서 제외**되고 관리자만 검토한다.
 //
-// 검토 권한(reviewable):
-//   - 관리자(admin:access): 모든 요청.
-//   - aged 사용자(가입 경과 >= edit_acl_min_age_days): 모든 요청(aged 는 문서 무관 상수).
-//   - 그 외: 자신이 이전에 편집한 문서(page_editor) 의 요청만.
-//   - 단 항상 author_id != 본인.
+// 검토 권한(reviewable): 관리자(admin:access)이며 author_id != 본인.
 //
 // 승인 시: 리비전 author 는 **원 요청자**로 기록하고, 편집 요약 끝에 승인자 닉네임+id 를 강제 박제한다.
 //   승인자가 에디터에서 추가 편집한 경우(approve 본문 content) 리비전 2개를 만든다
@@ -27,7 +23,7 @@
 
 import { Hono, type Context } from 'hono';
 import type { Env, User } from '../types';
-import { requireAuth } from '../middleware/session';
+import { requireAdmin, requireAuth } from '../middleware/session';
 import { RBAC } from '../utils/role';
 import { isR2OnlyNamespace } from '../utils/slug';
 import { getEnabledExtensions } from '../utils/extensions';
@@ -37,6 +33,7 @@ import { findConflictingPage, applyCreatePrefixRulesAndCategoryAcls, isEditReque
 import { commitPageMutation } from '../utils/pagePipeline/commit';
 import { notifyPageWatchers } from '../utils/pagePipeline/notifyWatchers';
 import { createNotification } from '../utils/notification';
+import { recordContributorTrustEvent } from '../utils/contributorTrust';
 import { mergeEditSummary, SUMMARY_DB_MAX } from '../utils/editSummary';
 import { ensurePendingEditsSummaryMigration } from '../utils/pendingEditsSummaryMigration';
 import {
@@ -50,6 +47,7 @@ import {
 } from '../utils/editAcl';
 
 const pendingEditsRoutes = new Hono<Env>();
+pendingEditsRoutes.use('*', requireAdmin);
 
 interface PendingEditRow {
     id: number;
@@ -96,13 +94,12 @@ function buildApprovalSuffix(authorSummary: string | null, reviewer: { name: str
 
 interface ReviewerCapability {
     isAdmin: boolean;
-    reviewsAll: boolean;     // isAdmin || aged → 전 문서 검토 가능
+    reviewsAll: boolean;     // 관리자만 진입하므로 항상 true
     minAge: number;
     canViewPrivate: boolean; // wiki:private — 비공개 보류본 검토 가능 여부
 }
 
-// 현재 사용자의 검토 능력(전 문서 검토 가능 여부 + 비공개 검토 가능 여부)을 1회 계산한다.
-//   isAdmin || aged → 전 문서 검토 가능. 그 외 → page_editor 문서만.
+// 현재 관리자의 검토 능력(전 문서 검토 가능 여부 + 비공개 검토 가능 여부)을 1회 계산한다.
 //   비공개 보류본(is_private=1)은 wiki:private 권한자만 검토 가능.
 async function computeReviewerCapability(
     db: D1Database,
@@ -112,8 +109,7 @@ async function computeReviewerCapability(
     const isAdmin = rbac.can(user.role, 'admin:access');
     const canViewPrivate = rbac.can(user.role, 'wiki:private');
     const minAge = await getEditAclMinAgeDays(db);
-    const aged = minAge <= 0 ? true : (Math.floor(Date.now() / 1000) - user.created_at >= minAge * 86400);
-    return { isAdmin, reviewsAll: isAdmin || aged, minAge, canViewPrivate };
+    return { isAdmin, reviewsAll: isAdmin, minAge, canViewPrivate };
 }
 
 // pending_edits 테이블이 아직 없는(마이그레이션 미적용) 환경의 에러인지 판별.
@@ -260,7 +256,7 @@ async function loadReviewablePendingEdit(
         if (isPrivate) return null;
     }
     if (cap.reviewsAll) return row;
-    // 비-aged 비관리자: 이 문서의 이전 편집자만 검토 가능.
+    // requireAdmin 방어선이 제거되더라도 비관리자는 이전 편집 문서만 보게 제한한다.
     if (row.page_id == null) return null; // create 보류는 page_editor 불가 → 검토 불가
     const editor = await db
         .prepare('SELECT 1 AS ok FROM revisions WHERE page_id = ? AND author_id = ? LIMIT 1')
@@ -604,6 +600,31 @@ async function cleanupPendingEdit(
             .bind(logType, logMessage, reviewer.id)
             .run().catch(() => {})
     );
+
+    const trustUpdate = await recordContributorTrustEvent(c.env.DB, {
+        userId: pe.author_id,
+        eventType: logType === 'pending_edit_approve' ? 'approved' : 'rejected',
+        sourceType: 'pending_edit',
+        sourceId: String(pe.id),
+        documentKey: pe.slug,
+        actorId: reviewer.id,
+        // 관리자가 요청을 몰아서 검토해도 사용자의 실제 기여일로 평가한다.
+        occurredAt: pe.updated_at,
+    }).catch((error) => {
+        console.error('contributor trust update failed:', error);
+        return null;
+    });
+    if (trustUpdate?.transition) {
+        const promoted = trustUpdate.transition === 'promoted';
+        c.executionCtx.waitUntil(createNotification(c.env, c.executionCtx, {
+            userId: pe.author_id,
+            type: 'contributor_trust',
+            content: promoted
+                ? '신뢰 기여자로 승격되어 이제 편집을 등록 요청 없이 바로 반영할 수 있습니다.'
+                : '기여 신뢰 상태가 일반 사용자로 변경되었습니다. 이후 편집은 관리자 검토 후 반영됩니다.',
+            link: '/mypage',
+        }).catch(() => {}));
+    }
 }
 
 /**

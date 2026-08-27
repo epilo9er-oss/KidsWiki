@@ -5,8 +5,7 @@
 //    loadNotificationCount / escapeHtml / appConfig)은 모듈 스코프에서 bare 식별자로
 //    해석되지 않으므로 모두 window.* 로 접근한다.
 //  - CDN 전역(Swal)은 그대로 둔다.
-//  - HTML on* 속성에서 호출되는, 이 블록에서 정의된 함수(adminBanUser /
-//    adminChangeRole / goToContributionsPage)는 파일 끝에서 window.* 로 노출한다.
+//  - HTML on* 속성에서 호출되는 함수는 파일 끝에서 window.* 로 노출한다.
 
 import { renderUserAvatar } from '../utils/avatar';
 
@@ -79,6 +78,13 @@ async function renderProfile() {
         : '알 수 없음';
 
     const avatarHtml = renderUserAvatar(profileUser.picture, profileUser.name, 80, 'profile-avatar-placeholder');
+    const profileBadges = [];
+    if (profileUser.trusted_contributor) {
+        profileBadges.push('<span class="badge bg-success" title="자신의 편집을 등록 요청 없이 바로 반영할 수 있습니다."><i class="mdi mdi-account-check-outline" aria-hidden="true"></i> 신뢰 기여자</span>');
+    }
+    for (const badge of profileUser.badges || []) {
+        profileBadges.push(`<span class="badge ${window.escapeHtml(badge.className)}" title="${window.escapeHtml(badge.description)}"><i class="${window.escapeHtml(badge.icon)}" aria-hidden="true"></i> ${window.escapeHtml(badge.label)}</span>`);
+    }
 
     // 쪽지 보내기 버튼 표시 여부
     let sendMsgBtn = '';
@@ -110,6 +116,7 @@ async function renderProfile() {
         ${avatarHtml}
         <div class="profile-info">
             <h2>${window.escapeHtml(profileUser.name)}</h2>
+            ${profileBadges.length ? `<div class="d-flex flex-wrap gap-2 mb-1">${profileBadges.join('')}</div>` : ''}
             <div class="text-muted"><i class="mdi mdi-calendar"></i> ${joinDate} 가입</div>
             <div class="d-flex flex-wrap gap-2 align-items-center">
                 ${sendMsgBtn}
@@ -172,6 +179,67 @@ function renderAdminControls() {
     }
 
     html += '</div>';
+
+    const trust = profileUser.trust;
+    if (trust) {
+        const policy = trust.policy;
+        const statusClass = trust.trusted ? 'bg-success' : 'bg-secondary';
+        const statusLabel = trust.trusted ? '신뢰 기여자' : '일반 기여자';
+        const approvalRate = Math.round(Number(trust.approval_rate || 0) * 100);
+        const cooldown = trust.cooldown_until > Math.floor(Date.now() / 1000)
+            ? `<div class="small text-warning mt-1">재평가 대기: ${new Date(trust.cooldown_until * 1000).toLocaleDateString('ko-KR')}까지</div>`
+            : '';
+        html += `
+            <hr>
+            <div class="row g-3 align-items-start">
+                <div class="col-12 col-lg-7">
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                        <strong>기여 신뢰</strong>
+                        <span class="badge ${statusClass}">${statusLabel}</span>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 small text-muted" aria-label="신뢰 기여자 자동 평가 현황">
+                        <span>승인 ${trust.approved}/${policy.minApprovedEdits}</span>
+                        <span>문서 ${trust.distinct_documents}/${policy.minDistinctDocuments}</span>
+                        <span>승인 기여일 ${trust.distinct_contribution_days}/${policy.minDistinctContributionDays}일</span>
+                        <span>승인율 ${approvalRate}/${Math.round(policy.minApprovalRate * 100)}%</span>
+                        <span>최근 문제 ${trust.problematic_recent}건</span>
+                    </div>
+                    ${cooldown}
+                </div>
+                <div class="col-12 col-lg-5">
+                    <label class="form-label mb-1" for="contributorTrustMode">신뢰 모드</label>
+                    <select id="contributorTrustMode" class="form-select" onchange="adminChangeTrustMode(this)">
+                        <option value="auto" ${trust.mode === 'auto' ? 'selected' : ''}>자동 평가</option>
+                        <option value="trusted" ${trust.mode === 'trusted' ? 'selected' : ''}>신뢰 기여자로 고정</option>
+                        <option value="standard" ${trust.mode === 'standard' ? 'selected' : ''}>일반 기여자로 고정</option>
+                    </select>
+                    <div class="form-text">역할·전문 자격과 별개이며, 직접 게시 가능 여부만 정합니다.</div>
+                </div>
+                <div class="col-12 d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-outline-danger" onclick="adminRecordTrustIssue()"><i class="mdi mdi-alert-outline" aria-hidden="true"></i> 문제 기여 기록</button>
+                </div>
+            </div>
+        `;
+    }
+
+    const assignedBadgeKeys = new Set((profileUser.badges || []).map(badge => badge.key));
+    const badgeControls = (profileUser.available_badges || []).map((badge, index) => `
+        <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" role="switch" id="userBadge${index}"
+                data-badge-key="${window.escapeHtml(badge.key)}" ${assignedBadgeKeys.has(badge.key) ? 'checked' : ''}
+                onchange="adminToggleBadge(this.dataset.badgeKey, this)">
+            <label class="form-check-label" for="userBadge${index}"><i class="${window.escapeHtml(badge.icon)}" aria-hidden="true"></i> ${window.escapeHtml(badge.label)}</label>
+            <div class="form-text">${window.escapeHtml(badge.description)}</div>
+        </div>
+    `).join('');
+    html += `
+        <hr>
+        <div>
+            <strong class="d-block mb-2">사용자 뱃지</strong>
+            ${badgeControls || '<span class="small text-muted">사용 가능한 뱃지가 없습니다.</span>'}
+            <div class="form-text">역할과 신뢰 상태에 관계없이 여러 뱃지를 부여할 수 있습니다.</div>
+        </div>
+    `;
     content.innerHTML = html;
 }
 
@@ -215,6 +283,94 @@ async function adminChangeRole(role) {
         Swal.fire({ icon: 'success', title: '변경됨', toast: true, position: 'top-end', timer: 1500, showConfirmButton: false });
     } else {
         Swal.fire('오류', data.error || '변경 실패', 'error');
+    }
+}
+
+async function adminChangeTrustMode(select) {
+    const previous = profileUser.trust?.mode || 'auto';
+    select.disabled = true;
+    try {
+        const res = await fetch(`/api/admin/users/${profileUser.id}/trust`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: select.value }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '변경 실패');
+        profileUser.trust = data.summary;
+        profileUser.trusted_contributor = data.summary.trusted;
+        await renderProfile();
+        Swal.fire({ icon: 'success', title: '신뢰 상태가 변경되었습니다.', toast: true, position: 'top-end', timer: 1800, showConfirmButton: false });
+    } catch (error) {
+        select.value = previous;
+        select.disabled = false;
+        Swal.fire('오류', error.message || '변경 실패', 'error');
+    }
+}
+
+async function adminRecordTrustIssue() {
+    const result = await Swal.fire({
+        titleText: `${profileUser.name} 문제 기여 기록`,
+        html: `
+            <label for="trustIssueSeverity" class="form-label d-block text-start">문제 수준</label>
+            <select id="trustIssueSeverity" class="form-select mb-3">
+                <option value="problematic">문제 기여</option>
+                <option value="severe">심각한 문제 기여</option>
+            </select>
+            <label for="trustIssueReason" class="form-label d-block text-start">사유</label>
+            <textarea id="trustIssueReason" class="form-control" rows="4" maxlength="500"></textarea>
+        `,
+        showCancelButton: true,
+        cancelButtonText: '취소',
+        confirmButtonText: '기록',
+        confirmButtonColor: '#dc3545',
+        focusConfirm: false,
+        preConfirm: () => {
+            const severity = document.getElementById('trustIssueSeverity').value;
+            const reason = document.getElementById('trustIssueReason').value.trim();
+            if (!reason) {
+                Swal.showValidationMessage('사유를 입력해주세요.');
+                return false;
+            }
+            return { severity, reason };
+        },
+    });
+    if (!result.value) return;
+
+    const res = await fetch(`/api/admin/users/${profileUser.id}/trust-events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(result.value),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        Swal.fire('오류', data.error || '기록 실패', 'error');
+        return;
+    }
+    profileUser.trust = data.summary;
+    profileUser.trusted_contributor = data.summary.trusted;
+    await renderProfile();
+    Swal.fire({ icon: 'success', title: '문제 기여를 기록했습니다.', toast: true, position: 'top-end', timer: 1800, showConfirmButton: false });
+}
+
+async function adminToggleBadge(badgeKey, input) {
+    const enabled = input.checked;
+    input.disabled = true;
+    try {
+        const res = await fetch(`/api/admin/users/${profileUser.id}/badges/${encodeURIComponent(badgeKey)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '변경 실패');
+        profileUser.badges = data.badges;
+        await renderProfile();
+        Swal.fire({ icon: 'success', title: `뱃지를 ${enabled ? '부여' : '회수'}했습니다.`, toast: true, position: 'top-end', timer: 1800, showConfirmButton: false });
+    } catch (error) {
+        input.checked = !enabled;
+        input.disabled = false;
+        Swal.fire('오류', error.message || '변경 실패', 'error');
     }
 }
 
@@ -369,4 +525,7 @@ function renderContribution(c) {
 // HTML on* 속성에서 호출되므로 window 로 노출
 window.adminBanUser = adminBanUser;
 window.adminChangeRole = adminChangeRole;
+window.adminChangeTrustMode = adminChangeTrustMode;
+window.adminRecordTrustIssue = adminRecordTrustIssue;
+window.adminToggleBadge = adminToggleBadge;
 window.goToContributionsPage = goToContributionsPage;

@@ -78,7 +78,7 @@ export function isEditRequestEnabled(env: Env['Bindings']): boolean {
 }
 
 /**
- * 신뢰되지 않은 사용자의 편집을 pending_edits 편집 요청으로 보류한다.
+ * 일반 사용자의 편집을 pending_edits 편집 요청으로 보류한다.
  * - revisions/pages 를 건드리지 않으므로 공개 화면은 마지막 승인본을 계속 노출한다.
  * - (author_id, slug) UNIQUE 로 작성자×슬러그당 1건만 유지 — 재제출 시 UPSERT 로 교체.
  * - 검토자(관리자)에게 인앱+푸시 알림, admin Discord 채널 웹훅을 best-effort 발송.
@@ -162,8 +162,7 @@ async function holdPendingEdit(
         .first<{ id: number }>();
     const pendingEditId = row?.id ?? 0;
 
-    // 검토자(관리자) 알림 — 신뢰 사용자(aged/이전 편집자)는 문서 배너로 발견하므로 폭주를 막고자
-    // 인앱/푸시는 관리자에 한정한다. 작성자 본인은 제외.
+    // 검토자인 관리자에게만 인앱/푸시 알림을 보낸다. 작성자 본인은 제외.
     c.executionCtx.waitUntil((async () => {
         try {
             const { results } = await db
@@ -852,11 +851,11 @@ import {
     evaluateEditAcl,
     getEditAclMinAgeDays,
     findPrefixRuleEditAcl,
-    isTrustedEditor,
     loadDocPrefixPrivacyRules,
     prefixRulesForcePrivate,
     type EditAcl,
 } from '../utils/editAcl';
+import { isTrustedContributor } from '../utils/contributorTrust';
 import { dispatchDiscord } from '../utils/webhook/discord';
 import { pendingEditCreated } from '../utils/webhook/events/pendingEdit';
 import {
@@ -1880,6 +1879,9 @@ wiki.get('/w/:slug/edit-permission', requireAuth, async (c) => {
         .first<{ id: number; is_private: number; edit_acl: string | null; deleted_at: number | null }>();
 
     const minAge = await getEditAclMinAgeDays(db);
+    const requiresReview = isEditRequestEnabled(c.env)
+        && !isAdmin
+        && !(await isTrustedContributor(db, user.id));
 
     // 소프트 삭제된 페이지는 PUT 경로에서 비관리자에게 410 으로 거부되고, 관리자도 같은 슬러그
     // INSERT 가 UNIQUE 제약으로 막힌다 (복원은 별도 POST /restore 경로). 신규 생성 케이스로 빠지면
@@ -1903,6 +1905,7 @@ wiki.get('/w/:slug/edit-permission', requireAuth, async (c) => {
         if (isAdmin && !hasAdminOnly) {
             return c.json({
                 allowed: true,
+                edit_request: false,
                 acl,
                 source: page.edit_acl ? 'page' : 'none',
                 min_age_days: minAge,
@@ -1929,7 +1932,8 @@ wiki.get('/w/:slug/edit-permission', requireAuth, async (c) => {
             // aged/page_editor 등 다른 플래그여도 하드 거부해야 한다 — ev.decisive 순서에 의존하지 않고
             // 'admin_only 포함 + 비관리자' 로 직접 판정한다(플래그 저장 순서 무관).
             const isAdminOnlyFail = hasAdminOnly && !isAdmin;
-            const editRequest = !ev.allowed && !isAdminOnlyFail && isEditRequestEnabled(c.env);
+            const editRequest = !isAdminOnlyFail
+                && (requiresReview || (!ev.allowed && isEditRequestEnabled(c.env)));
             return c.json({
                 allowed: ev.allowed || editRequest,
                 edit_request: editRequest,
@@ -1943,6 +1947,7 @@ wiki.get('/w/:slug/edit-permission', requireAuth, async (c) => {
         }
         return c.json({
             allowed: true,
+            edit_request: requiresReview,
             acl: null,
             source: 'none',
             min_age_days: minAge,
@@ -1971,6 +1976,7 @@ wiki.get('/w/:slug/edit-permission', requireAuth, async (c) => {
     if (!ruleAcl || ruleAcl.flags.length === 0 || (isAdmin && !ruleHasAdminOnly)) {
         return c.json({
             allowed: true,
+            edit_request: requiresReview,
             acl: ruleAcl,
             source: ruleAcl ? 'prefix_rule' : 'none',
             min_age_days: minAge,
@@ -1983,7 +1989,8 @@ wiki.get('/w/:slug/edit-permission', requireAuth, async (c) => {
     // 그 외 ACL 미달은 편집 요청 기능이 켜져 있으면 진입 허용(저장 시 create 보류).
     // ev.decisive 순서에 의존하지 않고 'admin_only 포함 + 비관리자' 로 직접 판정한다(플래그 저장 순서 무관).
     const isAdminOnlyFail = ruleHasAdminOnly && !isAdmin;
-    const editRequest = !ev.allowed && !isAdminOnlyFail && isEditRequestEnabled(c.env);
+    const editRequest = !isAdminOnlyFail
+        && (requiresReview || (!ev.allowed && isEditRequestEnabled(c.env)));
     return c.json({
         allowed: ev.allowed || editRequest,
         edit_request: editRequest,
@@ -2100,6 +2107,9 @@ wiki.put('/w/:slug', requireAuth, requirePermission('wiki:edit'), async (c) => {
 
     const isAdmin = rbac.can(user.role, 'admin:access');
     const db = c.env.DB;
+    const canPublishDirectly = isAdmin
+        || !isEditRequestEnabled(c.env)
+        || await isTrustedContributor(db, user.id);
 
     // editor_note 컬럼이 없는 레거시 DB 대비 idempotent 런타임 마이그레이션.
     await ensureEditorNoteMigration(db);
@@ -2396,14 +2406,13 @@ wiki.put('/w/:slug', requireAuth, requirePermission('wiki:edit'), async (c) => {
         }
 
         // ── 사람 편집 보류(pending changes) 분기 ──
-        // 전역 토글이 켜져 있고 편집자가 신뢰되지 않으면(비-aged·이 문서 미편집·비관리자)
+        // 전역 토글이 켜져 있고 편집자가 일반 사용자이면
         // 즉시 리비전을 만들지 않고 검토 대기로 보류한다. 공개 화면은 마지막 승인본을 유지.
         // ACL·비공개·동시편집 검증을 모두 통과한 직후 분기하므로, 보류본도 동일 사전조건을 만족한다.
         if (isEditRequestEnabled(c.env)) {
-            const minAge = await getEditAclMinAgeDays(db);
             // ACL 미달로 보류가 강제된 경우(aclHeldForPending)는 신뢰 여부와 무관하게 항상 보류한다 —
-            // ACL 을 통과하지 못한 편집이 신뢰 사용자라는 이유로 즉시 리비전이 되어선 안 된다.
-            if (aclHeldForPending || !(await isTrustedEditor(db, user, existing.id, minAge, isAdmin))) {
+            // ACL 을 통과하지 못한 편집이 신뢰 기여자라는 이유로 즉시 리비전이 되어선 안 된다.
+            if (aclHeldForPending || !canPublishDirectly) {
                 const finalTitleHold = hasTitleInBody ? requestedTitle ?? null : existing.title;
                 const pendingEditId = await holdPendingEdit(c, user, {
                     pageId: existing.id,
@@ -2580,9 +2589,8 @@ wiki.put('/w/:slug', requireAuth, requirePermission('wiki:edit'), async (c) => {
         // pageId=null·base_version=0 으로 저장하며, 승인 시 applyNewPageInsert 가 prefix/카테고리 ACL 을 재적용한다.
         // 보류본은 body.category(raw) 를 저장하고, 승인 시점에 prefix 룰을 다시 평가한다.
         if (isEditRequestEnabled(c.env)) {
-            const minAge = await getEditAclMinAgeDays(db);
             // 생성 ACL 미달로 보류가 강제된 경우(createAclHeldForPending)는 신뢰 여부와 무관하게 항상 보류.
-            if (createAclHeldForPending || !(await isTrustedEditor(db, user, null, minAge, isAdmin))) {
+            if (createAclHeldForPending || !canPublishDirectly) {
                 const pendingEditId = await holdPendingEdit(c, user, {
                     pageId: null,
                     slug,
@@ -2677,6 +2685,10 @@ wiki.put('/w/:slug/editor-note', requireAuth, requirePermission('wiki:edit'), as
     const user = c.get('user')!;
     const rbac = c.get('rbac') as RBAC;
     const db = c.env.DB;
+    const isAdmin = rbac.can(user.role, 'admin:access');
+    if (isEditRequestEnabled(c.env) && !isAdmin && !(await isTrustedContributor(db, user.id))) {
+        return c.json({ error: '편집 메모를 바로 변경하려면 신뢰 기여자 또는 관리자여야 합니다.' }, 403);
+    }
     await ensureEditorNoteMigration(db);
 
     const body = await c.req.json<{ editor_note?: string | null }>();
@@ -2700,7 +2712,6 @@ wiki.put('/w/:slug/editor-note', requireAuth, requirePermission('wiki:edit'), as
     {
         const acl = parseEditAcl(page.edit_acl);
         if (acl && acl.flags.length > 0) {
-            const isAdmin = rbac.can(user.role, 'admin:access');
             const hasAdminOnly = acl.flags.includes('admin_only');
             if (!isAdmin || hasAdminOnly) {
                 const minAge = await getEditAclMinAgeDays(db);
@@ -3602,6 +3613,10 @@ wiki.post('/w/:slug/revert', requireAuth, requirePermission('wiki:edit'), async 
 
     if (page.is_private === 1 && !rbac.can(user.role, 'wiki:private')) {
         return c.json({ error: '문서를 찾을 수 없습니다.' }, 404);
+    }
+
+    if (isEditRequestEnabled(c.env) && !isAdmin && !(await isTrustedContributor(db, user.id))) {
+        return c.json({ error: '문서를 바로 되돌리려면 신뢰 기여자 또는 관리자여야 합니다.' }, 403);
     }
 
     // 되돌리기는 새 리비전을 쌓는 본문 변경이므로 일반 편집(PUT)과 동일한 edit_acl 게이트를
