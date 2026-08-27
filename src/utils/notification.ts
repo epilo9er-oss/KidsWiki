@@ -7,7 +7,7 @@
 // 라우트마다 INSERT 와 pushToUser 호출을 수동으로 짝짓던 패턴 때문에 한쪽이 누락되는 사고가
 // 발생하기 쉬워, 두 동작을 한 함수로 묶고 모든 호출처가 이 함수를 거치도록 한다.
 
-import type { ExecutionContext } from '@cloudflare/workers-types';
+import type { ExecutionContext } from 'hono';
 import type { Env } from '../types';
 import { pushToUser, type PushPayload } from './push';
 
