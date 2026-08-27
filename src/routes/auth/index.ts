@@ -40,6 +40,7 @@ import {
 } from './identities';
 import { isUserId, type UserId } from '../../shared/userId';
 import { resolveCanonicalUserId } from './accountMerge';
+import { getPublicUserContributions } from '../../utils/contributionStats';
 
 const auth = new Hono<Env>();
 
@@ -1082,8 +1083,8 @@ auth.get('/api/users/:id/contributions', async (c) => {
 
     const db = c.env.DB;
     const userId = await resolveCanonicalUserId(db, requestedUserId);
-    const offset = parseInt(c.req.query('offset') || '0');
-    const limit = Math.min(parseInt(c.req.query('limit') || '20'), 50);
+    const offset = Math.max(0, parseInt(c.req.query('offset') || '0') || 0);
+    const limit = Math.min(50, Math.max(1, parseInt(c.req.query('limit') || '20') || 20));
 
     // 유저 존재 여부 확인
     const userExists = await db
@@ -1094,28 +1095,11 @@ auth.get('/api/users/:id/contributions', async (c) => {
         return c.json({ error: '사용자를 찾을 수 없습니다.' }, 404);
     }
 
-    const { results } = await db.prepare(
-        `SELECT r.id as revision_id, r.summary, r.created_at,
-                p.slug
-         FROM revisions r
-         JOIN pages p ON r.page_id = p.id
-         WHERE r.author_id = ? AND p.deleted_at IS NULL
-         ORDER BY r.created_at DESC
-         LIMIT ? OFFSET ?`
-    ).bind(userId, limit, offset).all();
-
-    // 다음 페이지 존재 여부 확인
-    const countResult = await db.prepare(
-        `SELECT COUNT(*) as total
-         FROM revisions r
-         JOIN pages p ON r.page_id = p.id
-         WHERE r.author_id = ? AND p.deleted_at IS NULL`
-    ).bind(userId).first<{ total: number }>();
+    const contributionData = await getPublicUserContributions(db, userId, limit, offset);
 
     return c.json({
-        contributions: results,
-        total: countResult?.total || 0,
-        has_more: offset + limit < (countResult?.total || 0),
+        ...contributionData,
+        has_more: offset + limit < contributionData.total,
     });
 });
 

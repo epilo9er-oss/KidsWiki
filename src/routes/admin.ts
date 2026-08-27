@@ -61,10 +61,16 @@ import type {
     AnnouncementMoveRequest,
 } from '../shared/api/announcement';
 import { createUserWithIdentity, findUserByIdentity } from './auth/identities';
+import { getPublicTopicContributionOverview } from '../utils/contributionStats';
 
 const adminRoutes = new Hono<Env>();
 
 adminRoutes.use('*', requireAdmin);
+
+adminRoutes.get('/contribution-topics', async (c) => {
+    const topics = await getPublicTopicContributionOverview(c.env.DB);
+    return c.json({ topics });
+});
 
 // ── 관리 로그 기록 헬퍼 ──
 export function writeAdminLog(c: any, type: string, log: string, userId: string) {

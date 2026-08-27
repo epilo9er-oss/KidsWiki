@@ -178,6 +178,27 @@ import Footer from '../components/Footer.astro';
               </div>
             </div>
           </div>
+
+          <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header py-3 d-flex flex-wrap gap-2 justify-content-between align-items-center">
+              <h5 class="mb-0">
+                <i class="mdi mdi-account-details-outline text-primary" aria-hidden="true"></i>
+                분야 기여 현황
+              </h5>
+              <span class="badge bg-secondary">실험</span>
+            </div>
+            <div class="card-body">
+              <p class="text-muted small mb-3">
+                카테고리가 연결된 공개 문서의 실제 편집만 집계한 누적치입니다. 순위나 전문성 판정에는 사용하지 않습니다.
+              </p>
+              <div id="topicContributionOverview" aria-live="polite">
+                <div class="d-flex align-items-center gap-2 text-muted py-3" role="status">
+                  <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                  <span>분야 기여 현황을 불러오는 중...</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- ── 탭: 회원 관리 (Users) ── -->

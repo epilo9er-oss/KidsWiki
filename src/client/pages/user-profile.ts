@@ -237,6 +237,7 @@ async function loadContributions(page = 1) {
         if (seq !== contributionsRequestSeq) return;
         const contributions = data.contributions || [];
         const total = data.total || 0;
+        renderTopicContributions(data.topic_contributions || []);
 
         contributionsTotal = total;
 
@@ -277,6 +278,24 @@ async function loadContributions(page = 1) {
         listEl.innerHTML = window.uiEmptyState({ compact: true, icon: 'bi bi-exclamation-triangle', title: '불러오기 실패', text: '잠시 후 다시 시도해 주세요.' });
         paginationEl.innerHTML = '';
     }
+}
+
+function renderTopicContributions(topics) {
+    const section = document.getElementById('topicContributionsSection');
+    const list = document.getElementById('topicContributionsList');
+    if (!topics.length) {
+        section.style.display = 'none';
+        list.innerHTML = '';
+        return;
+    }
+
+    section.style.display = '';
+    list.innerHTML = topics.map(topic => `
+        <div class="topic-contribution-card">
+            <div class="topic-contribution-name">${window.escapeHtml(topic.category)}</div>
+            <div class="topic-contribution-count"><strong>${Number(topic.document_count).toLocaleString()}</strong>개 문서</div>
+        </div>
+    `).join('');
 }
 
 function goToContributionsPage(page) {

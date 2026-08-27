@@ -90,6 +90,7 @@ import { renderUserAvatar } from '../utils/avatar';
         loadWikiSettings();
         loadSignupPolicy();
         loadDashStats();
+        loadContributionOverview();
         if (typeof window.loadPaletteList === "function") {
           window.loadPaletteList();
         }
@@ -113,6 +114,61 @@ import { renderUserAvatar } from '../utils/avatar';
           // 대시보드 로드 시 배지 갱신
           updateSidebarSignupBadge();
         } catch (e) {}
+      }
+
+      async function loadContributionOverview() {
+        const container = document.getElementById("topicContributionOverview");
+        try {
+          const res = await fetch("/api/admin/contribution-topics");
+          if (!res.ok) throw new Error();
+          const { topics = [] } = await res.json();
+
+          if (!topics.length) {
+            container.innerHTML = window.uiEmptyState({
+              compact: true,
+              icon: "mdi mdi-chart-box-outline",
+              title: "아직 분야 기여 데이터가 없습니다",
+              text: "카테고리가 연결된 공개 문서에 편집이 쌓이면 여기에 표시됩니다.",
+            });
+            return;
+          }
+
+          container.innerHTML = `
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col">분야</th>
+                    <th scope="col" class="text-end">문서</th>
+                    <th scope="col" class="text-end">기여자</th>
+                    <th scope="col" class="text-end">편집</th>
+                    <th scope="col" class="text-end">최근 기여</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${topics.map((topic) => `
+                    <tr>
+                      <th scope="row">${window.escapeHtml(topic.category)}</th>
+                      <td class="text-end">${Number(topic.document_count).toLocaleString()}</td>
+                      <td class="text-end">${Number(topic.contributor_count).toLocaleString()}</td>
+                      <td class="text-end">${Number(topic.edit_count).toLocaleString()}</td>
+                      <td class="text-end text-nowrap">${topic.last_contributed_at
+                        ? new Date(topic.last_contributed_at * 1000).toLocaleDateString("ko-KR")
+                        : "-"}</td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            </div>
+          `;
+        } catch (e) {
+          container.innerHTML = window.uiEmptyState({
+            compact: true,
+            icon: "bi bi-exclamation-triangle",
+            title: "분야 기여 현황을 불러오지 못했습니다",
+            text: "페이지를 새로고침해 다시 시도해 주세요.",
+          });
+        }
       }
 
       function renderMiniChart(id, data) {

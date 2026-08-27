@@ -146,6 +146,36 @@ import Footer from '../components/Footer.astro';
                 font-weight: 500;
             }
 
+            .topic-contribution-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 0.75rem;
+            }
+
+            .topic-contribution-card {
+                min-width: 0;
+                padding: 0.9rem 1rem;
+                background: var(--wiki-toc-bg);
+                border: 1px solid var(--wiki-border);
+                border-radius: 12px;
+            }
+
+            .topic-contribution-name {
+                margin-bottom: 0.25rem;
+                font-weight: 700;
+                overflow-wrap: anywhere;
+            }
+
+            .topic-contribution-count {
+                color: var(--wiki-text-muted);
+                font-size: 0.875rem;
+            }
+
+            .topic-contribution-count strong {
+                color: var(--wiki-primary);
+                font-size: 1.1rem;
+            }
+
             .contributions-pagination {
                 margin-top: 1rem;
             }
@@ -177,6 +207,15 @@ import Footer from '../components/Footer.astro';
                 <div class="profile-section" id="statsSection" style="display:none;">
                     <h4><i class="mdi mdi-chart-bar"></i> 활동 통계</h4>
                     <div class="stat-cards" id="statCards"></div>
+                </div>
+
+                <!-- 주요 기여 분야 -->
+                <div class="profile-section" id="topicContributionsSection" style="display:none;">
+                    <h4><i class="mdi mdi-shape-outline" aria-hidden="true"></i> 주요 기여 분야</h4>
+                    <p class="text-muted small mb-3">
+                        공개 문서에 남긴 편집을 분야별 문서 수로 보여줍니다. 전문 자격이나 현재 내용에 대한 동의를 뜻하지 않습니다.
+                    </p>
+                    <div class="topic-contribution-grid" id="topicContributionsList" aria-live="polite"></div>
                 </div>
 
                 <!-- 최근 편집 내역 -->
