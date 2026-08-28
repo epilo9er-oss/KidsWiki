@@ -1726,7 +1726,7 @@ async function loadTrending() {
             `;
         }).join('');
 
-        const emptyMsg = emptyState({ compact: true, icon: 'bi bi-graph-up', title: '트렌딩 데이터가 없습니다' });
+        const emptyMsg = '<p class="mb-0 d-flex align-items-center px-2 text-muted small" style="height: 38px;">트렌딩 데이터가 없습니다</p>';
         const content = data.trending && data.trending.length > 0 ? html : emptyMsg;
 
         document.querySelectorAll('.trending-container').forEach(el => {
