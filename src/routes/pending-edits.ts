@@ -47,7 +47,7 @@ import {
 } from '../utils/editAcl';
 
 const pendingEditsRoutes = new Hono<Env>();
-pendingEditsRoutes.use('*', requireAdmin);
+pendingEditsRoutes.use('/pending-edits/*', requireAdmin);
 
 interface PendingEditRow {
     id: number;
