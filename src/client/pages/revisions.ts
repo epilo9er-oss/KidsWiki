@@ -29,7 +29,7 @@ let lastRevisionId = null;
 // 편집 요약 어디에 있든 [+N줄 -M줄] / [+N줄] / [-M줄] 토큰을 초록/빨강으로 색칠.
 // 토큰 사이의 일반 텍스트는 escapeHtml 로 안전하게 인코딩하고, 토큰 자체는
 // \d/+/-/줄/공백/[] 만으로 구성되어 있어 그대로 합성해도 안전하다.
-// [MCP] 접두(admin-mcp.ts 가 부여)는 플러그 아이콘으로 치환해 사람 편집과 구분.
+// 정책 변경 전 저장된 [MCP] 접두는 기존 이력 호환을 위해 플러그 아이콘으로 계속 표시.
 function renderRevisionSummary(raw) {
   if (!raw) return '(요약 없음)';
   let body = raw;

@@ -24,7 +24,7 @@ interface CommonMutationInput {
     slug: string;
     content: string;              // LF 정규화된 최종 본문
     summary: string | null;
-    summaryRaw?: boolean;         // true 면 withMcpPrefix() 생략(승인 경로 박제 요약)
+    summaryRaw?: boolean;         // true 면 사람 편집 요약을 그대로 보존
     redirectTo?: string | null;   // undefined → 기존 유지
     title?: string | null;        // undefined → 기존 유지, null → 제거, string → 설정
     editorNote?: string | null;   // undefined → 기존 유지, null/string → 덮어쓰기 (편집 메모)

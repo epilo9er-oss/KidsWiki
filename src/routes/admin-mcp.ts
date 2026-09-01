@@ -249,12 +249,12 @@ export const USER_EDIT_TOOL_DEFS: McpToolDef[] = [
     },
     {
         name: 'commit_edit',
-        description: 'draft 에 누적된 편집을 승인 대기로 제출합니다. base_revision_id 가 그 사이 변경되었으면(=다른 사용자가 페이지를 수정) 거부합니다 — 그 경우 discard_edit 후 read_document 로 최신 상태를 다시 읽고 편집을 재구성해야 합니다. 신규 페이지 draft 인데 commit 시점에 이미 같은 슬러그가 존재하면 같은 사유로 거부합니다. summary 는 새 리비전의 편집 요약입니다 (선택, 최대 255자). 저장 시 자동으로 `[MCP] [+N줄 -M줄] ` 접두가 붙어 사람 편집과 구분되며 변경 규모를 한눈에 보여줍니다 (예: `[MCP] [+5줄 -2줄] 오타 수정`).\n\n응답에도 이전 본문 대비 라인 단위 변경량(`lines_added` / `lines_removed`)이 포함됩니다 — git diff --stat 의 +N/-M 와 동일한 의미입니다 (CRLF 정규화 후 LCS 기반으로 산출).\n\n**항상 승인 대기로 제출**됩니다. draft 는 즉시 리비전이 되지 않고 OAuth 토큰 소유자(=이 MCP 를 연결한 본인) 에게 승인 대기로 제출됩니다. 본인이 마이페이지 / 알림 / 문서 배너에서 검토 후 승인해야 비로소 리비전이 만들어집니다. 거부 시 draft 는 폐기됩니다.\n\n승인 단계 없이 즉시 반영하려면(마이페이지에서 "MCP 편집 즉시반영 허용" 을 켠 경우) commit_edit 대신 apply_edit 도구를 사용하세요 — 도구 목록에 apply_edit 이 보이면 활성 상태입니다.',
+        description: 'draft 에 누적된 편집을 승인 대기로 제출합니다. base_revision_id 가 그 사이 변경되었으면(=다른 사용자가 페이지를 수정) 거부합니다 — 그 경우 discard_edit 후 read_document 로 최신 상태를 다시 읽고 편집을 재구성해야 합니다. 신규 페이지 draft 인데 commit 시점에 이미 같은 슬러그가 존재하면 같은 사유로 거부합니다. summary 는 새 리비전의 편집 요약입니다 (선택, 최대 255자). 저장 시 `[+N줄 -M줄]` 변경량 표시가 자동으로 붙습니다 (예: `[+5줄 -2줄] 오타 수정`).\n\n응답에도 이전 본문 대비 라인 단위 변경량(`lines_added` / `lines_removed`)이 포함됩니다 — git diff --stat 의 +N/-M 와 동일한 의미입니다 (CRLF 정규화 후 LCS 기반으로 산출).\n\n**항상 승인 대기로 제출**됩니다. draft 는 즉시 리비전이 되지 않고 OAuth 토큰 소유자(=이 MCP 를 연결한 본인) 에게 승인 대기로 제출됩니다. 본인이 마이페이지 / 알림 / 문서 배너에서 검토 후 승인해야 비로소 리비전이 만들어집니다. 거부 시 draft 는 폐기됩니다.\n\n승인 단계 없이 즉시 반영하려면(마이페이지에서 "MCP 편집 즉시반영 허용" 을 켠 경우) commit_edit 대신 apply_edit 도구를 사용하세요 — 도구 목록에 apply_edit 이 보이면 활성 상태입니다.',
         inputSchema: {
             type: 'object',
             properties: {
                 draft_id: { type: 'number', description: '커밋할 draft 의 id (편집 도구 응답에서 받은 값)' },
-                summary: { type: 'string', description: '편집 요약 (선택, 최대 255자, 저장 시 [MCP] 접두 자동 부여)' },
+                summary: { type: 'string', description: '편집 요약 (선택, 최대 255자)' },
             },
             required: ['draft_id']
         }
@@ -278,7 +278,7 @@ export const USER_EDIT_TOOL_DEFS: McpToolDef[] = [
             properties: {
                 title: { type: 'string', description: '되돌릴 대상 문서 슬러그' },
                 revision_id: { type: 'number', description: '되돌릴 기준 리비전 id (정수)' },
-                summary: { type: 'string', description: '편집 요약 (선택, 기본 "reverted to revision #N", 저장 시 [MCP] 접두 자동 부여)' }
+                summary: { type: 'string', description: '편집 요약 (선택, 기본 "reverted to revision #N")' }
             },
             required: ['title', 'revision_id']
         }
@@ -395,51 +395,38 @@ function asTextResult(text: string, isError = false): ToolResult {
     return { content: [{ type: 'text', text }], isError };
 }
 
-// MCP 경로에서 만들어지는 모든 리비전 summary 에 [MCP] 접두를 보장한다.
-// 편집 자체는 OAuth 로 인증된 사용자(에이전트가 연결된 계정) 의 작업으로 기록되며,
-// 이 접두만 추가해 사람이 직접 편집한 리비전과 구분할 수 있게 한다.
-// 사용자가 직접 [MCP] 로 시작하는 summary 를 넘기면 중복 접두를 만들지 않는다.
-export const MCP_SUMMARY_PREFIX = '[MCP]';
 export const MCP_SUMMARY_MAX_LENGTH = 255;
-export function withMcpPrefix(summary: string | null | undefined): string {
+export function normalizeMcpSummary(summary: string | null | undefined): string | null {
     const trimmed = (summary ?? '').trim();
-    if (!trimmed) return MCP_SUMMARY_PREFIX;
-    if (trimmed.startsWith(MCP_SUMMARY_PREFIX)) return trimmed;
-    return `${MCP_SUMMARY_PREFIX} ${trimmed}`;
+    return trimmed || null;
 }
-// 입력 summary 가 [MCP] 접두 부여 후에도 255자 한도(MCP_SUMMARY_MAX_LENGTH) 를 넘지 않는지 검증.
-// 도구 스키마/문서가 명시한 contract 가 무너지지 않도록 raw 입력이 아니라 저장될 최종 문자열을 기준으로 한다.
+// 앞뒤 공백을 제거한 summary 가 255자 한도(MCP_SUMMARY_MAX_LENGTH) 를 넘지 않는지 검증.
 export function validateMcpSummaryLength(summary: string | null | undefined): string | null {
-    const finalLength = withMcpPrefix(summary).length;
+    const finalLength = normalizeMcpSummary(summary)?.length ?? 0;
     if (finalLength > MCP_SUMMARY_MAX_LENGTH) {
-        return `Error: summary 는 [MCP] 접두 포함 최대 ${MCP_SUMMARY_MAX_LENGTH}자입니다 (현재 ${finalLength}자).`;
+        return `Error: summary 는 최대 ${MCP_SUMMARY_MAX_LENGTH}자입니다 (현재 ${finalLength}자).`;
     }
     return null;
 }
 
 // commit_edit 의 리비전 summary 앞에 자동 부여되는 diff 마커.
-// "[+N줄 -M줄]" 형식이며 [MCP] 접두 뒤, 사용자 summary 앞에 위치한다.
-// 예) `[MCP] [+5줄 -2줄] 오타 수정`
+// "[+N줄 -M줄]" 형식이며 사용자 summary 앞에 위치한다.
+// 예) `[+5줄 -2줄] 오타 수정`
 export function formatDiffMarker(stats: { added: number; removed: number }): string {
     return `[+${stats.added}줄 -${stats.removed}줄]`;
 }
 
-// 사용자 summary 와 diff 마커를 결합한 최종 summary 본문(=[MCP] 접두 부여 전) 을 만든다.
-// 결합 후 [MCP] 접두까지 포함한 길이가 255자를 넘으면 사용자 summary 를 말줄임표(…)로 잘라
-// 한도를 맞춘다 — 마커는 항상 보존된다.
+// 사용자 summary 와 diff 마커를 결합한다. 255자를 넘으면 사용자 summary 를
+// 말줄임표(…)로 잘라 한도를 맞춘다 — 마커는 항상 보존된다.
 export function buildCommitSummary(userSummary: string | null, stats: { added: number; removed: number }): string {
     const marker = formatDiffMarker(stats);
     const trimmedUser = (userSummary ?? '').trim();
     const combined = trimmedUser ? `${marker} ${trimmedUser}` : marker;
-    if (withMcpPrefix(combined).length <= MCP_SUMMARY_MAX_LENGTH) return combined;
+    if (combined.length <= MCP_SUMMARY_MAX_LENGTH) return combined;
 
     // 한도 초과 — 사용자 summary 만 잘라낸다.
-    // 최종 형태는 "[MCP] {marker} {truncatedUser}…" 이므로 다음 4가지 고정 비용을 모두 예산에 포함해야 한다.
-    // (withMcpPrefix 가 .trim() 하므로 marker 뒤 공백 1 자가 누락되지 않도록 명시적으로 계산.)
     const fixedOverhead =
-        MCP_SUMMARY_PREFIX.length /* "[MCP]" */
-        + 1 /* "[MCP]" 와 marker 사이 공백 */
-        + marker.length
+        marker.length
         + 1 /* marker 와 user 사이 공백 */
         + 1 /* 말줄임표 '…' */;
     const room = MCP_SUMMARY_MAX_LENGTH - fixedOverhead;
@@ -662,7 +649,7 @@ export async function applyExistingPageUpdate(
         slug: string;
         editAcl?: string | null;      // undefined → 기존 유지(MCP 기본), null/string → 덮어쓰기 (사람 편집 보류 승인의 카테고리 ACL 머지 적용용).
         isPrivate?: number;           // undefined → 기존 유지(MCP/승인 경로 기본 — 본 저장은 비공개를 바꾸지 않음). 0/1 → 컬럼 덮어쓰기 (직접 PUT 의 wiki:private 토글용).
-        summaryRaw?: boolean;         // true 면 withMcpPrefix() 를 건너뛰고 opts.summary 를 그대로 저장 (사람 편집 보류 승인 경로). 기본 false → [MCP] 접두.
+        summaryRaw?: boolean;         // true 면 사람 편집 요약을 그대로 저장. 기본 false 면 MCP 입력의 앞뒤 공백을 제거.
         editorNote?: string | null;   // undefined → 기존 유지, null/string → editor_note 컬럼 덮어쓰기
         logType?: string;             // admin_log type (예: page_update / page_patch / page_revert) — 생략 시 로그 없음
         logMessage?: string;
@@ -679,7 +666,7 @@ export async function applyExistingPageUpdate(
     const isR2Only = isR2OnlyNamespace(opts.slug, enabledExt);
     const metrics = computePageMetricsTracked(content, isR2Only);
     const newVersion = page.version + 1;
-    const revisionSummary = opts.summaryRaw ? (opts.summary ?? null) : withMcpPrefix(opts.summary);
+    const revisionSummary = opts.summaryRaw ? (opts.summary ?? null) : normalizeMcpSummary(opts.summary);
 
     const r2Key = await uploadRevisionToR2(c.env.MEDIA, page.id, newVersion, content);
     let revisionId: number;
@@ -803,7 +790,7 @@ export async function applyNewPageInsert(
         editAcl?: string | null;       // serialize 된 JSON. 호출자가 prefix 룰을 평가해 주입.
         isPrivate?: number;            // 호출자가 doc_setting_prefix_rules longest-match 로 산출. 누락 시 0.
         title?: string | null;        // 호출자가 사전 충돌 검증을 마쳤다고 가정. 누락 시 NULL.
-        summaryRaw?: boolean;         // true 면 withMcpPrefix() 를 건너뛰고 opts.summary 를 그대로 저장 (사람 편집 보류 승인 경로). 기본 false → [MCP] 접두.
+        summaryRaw?: boolean;         // true 면 사람 편집 요약을 그대로 저장. 기본 false 면 MCP 입력의 앞뒤 공백을 제거.
         editorNote?: string | null;   // 편집 메모. 누락 시 NULL.
         logType?: string;
         logMessage?: string;
@@ -854,7 +841,7 @@ export async function applyNewPageInsert(
     try {
         const revResult = await db
             .prepare('INSERT INTO revisions (page_id, page_version, content, r2_key, summary, author_id, human_authored) VALUES (?, ?, ?, ?, ?, ?, ?)')
-            .bind(pageId, 1, '', firstR2Key, opts.summaryRaw ? (opts.summary ?? null) : withMcpPrefix(opts.summary), user.id, opts.humanAuthored ? 1 : 0)
+            .bind(pageId, 1, '', firstR2Key, opts.summaryRaw ? (opts.summary ?? null) : normalizeMcpSummary(opts.summary), user.id, opts.humanAuthored ? 1 : 0)
             .run();
         revisionId = revResult.meta.last_row_id;
     } catch (e) {
@@ -1870,7 +1857,7 @@ export async function dispatchAdminEditTool(c: Context<Env>, user: User, toolNam
                 const r2Key = await uploadRevisionToR2(c.env.MEDIA, page.id, newVersion, rewritten);
                 const revResult = await db
                     .prepare('INSERT INTO revisions (page_id, page_version, content, r2_key, summary, author_id) VALUES (?, ?, ?, ?, ?, ?)')
-                    .bind(page.id, newVersion, '', r2Key, withMcpPrefix(`[move] ${oldSlug} → ${newSlug}`), user.id)
+                    .bind(page.id, newVersion, '', r2Key, `[move] ${oldSlug} → ${newSlug}`, user.id)
                     .run();
                 newRevisionId = revResult.meta.last_row_id;
                 const newIsR2Only = isR2OnlyNamespace(newSlug, enabledExt);
@@ -1895,7 +1882,7 @@ export async function dispatchAdminEditTool(c: Context<Env>, user: User, toolNam
                 // (HTTP POST /w/:slug/move · 대량 이동과 동일). 본문이 바뀌는 분기는 위에서
                 // 이미 [move] 본문 리비전을 만들므로 별도 가상 리비전이 필요 없다.
                 try {
-                    await insertVirtualRevision(db, page.id, withMcpPrefix(`[이동] 주소 변경: ${oldSlug} → ${newSlug}`), user.id);
+                    await insertVirtualRevision(db, page.id, `[이동] 주소 변경: ${oldSlug} → ${newSlug}`, user.id);
                 } catch (e) {
                     console.error('Failed to write virtual revision for MCP slug-only move:', e);
                 }
@@ -1944,7 +1931,7 @@ export async function dispatchAdminEditTool(c: Context<Env>, user: User, toolNam
                 const blR2Key = await uploadRevisionToR2(c.env.MEDIA, bl.id, blNewVer, blRewritten);
                 const blRev = await db
                     .prepare('INSERT INTO revisions (page_id, page_version, content, r2_key, summary, author_id) VALUES (?, ?, ?, ?, ?, ?)')
-                    .bind(bl.id, blNewVer, '', blR2Key, withMcpPrefix(`[move-backlink] ${oldSlug} → ${newSlug}`), user.id)
+                    .bind(bl.id, blNewVer, '', blR2Key, `[move-backlink] ${oldSlug} → ${newSlug}`, user.id)
                     .run();
                 const blMetrics = computePageMetricsTracked(blRewritten, blIsR2);
                 const blContentToStore = blIsR2 ? '' : blRewritten;
@@ -2274,8 +2261,7 @@ export function buildUserEditInformationSuffix(userName: string): string {
         `본인이 마이페이지 / 알림 / 문서 배너에서 검토 후 승인해야 비로소 리비전이 만들어집니다. 거부 시 draft 는 폐기됩니다. ` +
         `승인 대기 상태 draft 는 list_drafts / read_draft 의 \`status\` 필드가 \`pending_approval\` 로 표시되며, AI 측에서는 더 이상 수정할 수 없습니다 (discard_edit 로 폐기만 가능).\n\n` +
         `**즉시 적용** (draft 모델 미사용): revert_page.\n\n` +
-        USER_EDIT_TOOL_DEFS.map(t => `- ${t.name}`).join('\n') +
-        `\n\n리비전 summary 에 [MCP] 접두가 붙습니다 (draft 단계는 기록 없음).`;
+        USER_EDIT_TOOL_DEFS.map(t => `- ${t.name}`).join('\n');
     return `${readIntro}${editIntro}`;
 }
 

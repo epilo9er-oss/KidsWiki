@@ -2443,7 +2443,7 @@ wiki.put('/w/:slug', requireAuth, requirePermission('wiki:edit'), async (c) => {
         // ── 리비전 저장 + 후처리(재색인·캐시 무효화·주시자 알림)를 통합 파이프라인에 위임 ──
         // R2 업로드 → revisions INSERT → pages UPDATE(version-CAS) → 링크/카테고리 재색인 →
         // 3종 캐시 무효화 → 주시자 알림이 승인(pending/mcp) 경로와 동일한 단일 소스로 실행된다.
-        // 사람 편집이므로 요약에 [MCP] 접두를 붙이지 않는다(summaryRaw: true).
+        // 사람 편집 요약은 입력된 값을 그대로 보존한다(summaryRaw: true).
         //
         // 컬럼 쓰기 규칙은 인라인 구현과 동일하게 유지한다:
         //   - title: body 에 키가 명시된 경우만 변경, 그 외 기존값(existing.title) 유지.
@@ -2618,7 +2618,7 @@ wiki.put('/w/:slug', requireAuth, requirePermission('wiki:edit'), async (c) => {
 
         // ── 신규 페이지 INSERT + 첫 리비전 + 후처리(재색인·캐시 무효화)를 통합 파이프라인에 위임 ──
         // ACL/카테고리/비공개는 위에서 prefix 룰·카테고리 ACL 로 이미 preResolved 했고, 파이프라인은
-        // 그 값을 그대로 INSERT 한다. 사람 편집이므로 요약에 [MCP] 접두를 붙이지 않는다(summaryRaw: true).
+        // 그 값을 그대로 INSERT 한다. 사람 편집 요약은 입력된 값을 그대로 보존한다(summaryRaw: true).
         // 신규 문서 생성은 승인(mcp) 경로와 동일하게 주시자 알림을 보내지 않는다(notify: false).
         let createResult;
         try {

@@ -68,7 +68,7 @@ export type ApplyDraftOutcome =
 /**
  * draft 를 실제 리비전으로 확정한다. 충돌/ACL/카테고리/제목 재검증을 write 직전(=author 기준)에
  * 다시 수행하고 commitPageMutation 으로 저장한 뒤, draft 와 관련 mcp_submission 알림을 정리한다.
- * finalSummary 는 사용자가 채택한 편집 요약(원문) — 내부에서 diff 마커/[MCP] 접두가 부여된다.
+ * finalSummary 는 사용자가 채택한 편집 요약(원문) — 내부에서 diff 마커가 부여된다.
  */
 export async function applyDraftMutation(
     c: Context<Env>,
@@ -413,12 +413,12 @@ export async function applyDraftMutation(
 
 export const APPLY_EDIT_TOOL_DEF = {
     name: 'apply_edit',
-    description: 'draft 에 누적된 편집을 승인 단계 없이 **즉시** 새 리비전으로 확정합니다 (마이페이지에서 "MCP 편집 즉시반영 허용" 을 켠 경우에만 노출). commit_edit 이 승인 대기로 제출하는 것과 달리, 이 도구는 곧바로 저장합니다.\n\ncommit_edit 와 동일한 충돌 검증을 적용합니다 — base_revision_id 가 그 사이 변경되었거나(다른 사용자가 페이지 수정), 신규 페이지 draft 인데 같은 슬러그가 이미 존재하면 거부합니다. 편집 권한(edit_acl)/관리자 전용 카테고리도 적용 시점에 재검증됩니다.\n\nsummary 는 새 리비전의 편집 요약입니다 (선택, 최대 255자). 저장 시 자동으로 `[MCP] [+N줄 -M줄] ` 접두가 붙습니다. 응답에는 새 revision_id 와 라인 단위 변경량(lines_added / lines_removed)이 포함됩니다.\n\n승인 검토가 필요하면 apply_edit 대신 commit_edit 을 사용하세요.',
+    description: 'draft 에 누적된 편집을 승인 단계 없이 **즉시** 새 리비전으로 확정합니다 (마이페이지에서 "MCP 편집 즉시반영 허용" 을 켠 경우에만 노출). commit_edit 이 승인 대기로 제출하는 것과 달리, 이 도구는 곧바로 저장합니다.\n\ncommit_edit 와 동일한 충돌 검증을 적용합니다 — base_revision_id 가 그 사이 변경되었거나(다른 사용자가 페이지 수정), 신규 페이지 draft 인데 같은 슬러그가 이미 존재하면 거부합니다. 편집 권한(edit_acl)/관리자 전용 카테고리도 적용 시점에 재검증됩니다.\n\nsummary 는 새 리비전의 편집 요약입니다 (선택, 최대 255자). 저장 시 `[+N줄 -M줄]` 변경량 표시가 자동으로 붙습니다. 응답에는 새 revision_id 와 라인 단위 변경량(lines_added / lines_removed)이 포함됩니다.\n\n승인 검토가 필요하면 apply_edit 대신 commit_edit 을 사용하세요.',
     inputSchema: {
         type: 'object',
         properties: {
             draft_id: { type: 'number', description: '즉시 적용할 draft 의 id (편집 도구 응답에서 받은 값)' },
-            summary: { type: 'string', description: '편집 요약 (선택, 최대 255자, 저장 시 [MCP] 접두 자동 부여)' },
+            summary: { type: 'string', description: '편집 요약 (선택, 최대 255자)' },
         },
         required: ['draft_id'],
     },

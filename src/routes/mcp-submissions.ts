@@ -288,7 +288,7 @@ mcpSubmissionsRoutes.get('/mcp-submissions/:id', requireAuth, async (c) => {
 /**
  * POST /api/mcp-submissions/:id/approve
  * 본인 제출안을 새 리비전으로 커밋. body 의 summary 가 있으면 그것을, 없으면
- * submitted_summary (AI 가 제안한 요약) 를 사용. 둘 다 비었으면 빈 요약 → [MCP] 접두만 남음.
+ * submitted_summary (AI 가 제안한 요약) 를 사용. 둘 다 비었으면 변경량 표시만 남는다.
  * 충돌/ACL/카테고리 재검증 + 실제 저장은 공용 applyDraftMutation 에 위임한다(즉시 적용 apply_edit 과 동일 소스).
  */
 mcpSubmissionsRoutes.post('/mcp-submissions/:id/approve', requireAuth, async (c) => {

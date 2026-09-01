@@ -827,7 +827,7 @@ import { renderUserAvatar } from '../utils/avatar';
                     <div>+${detail.lines_added}줄 / -${detail.lines_removed}줄</div>
                 </div>
                 <div class="mt-1 mb-2 text-start">
-                    <label class="form-label small mb-1">편집 요약 (저장 시 [MCP] 접두 자동 부여)</label>
+                    <label class="form-label small mb-1">편집 요약</label>
                     <input type="text" id="mcpApproveSummary" class="form-control form-control-sm" maxlength="200" value="${window.escapeHtml(summaryDefault)}">
                 </div>
             `;
