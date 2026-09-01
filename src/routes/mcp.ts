@@ -106,18 +106,10 @@ async function tryAuthenticateBearer(c: Context<Env>): Promise<McpAuthContext | 
     return { user: res.user, tokenId: res.tokenId, scope: res.scope };
 }
 
-// GET /api/mcp - 기본 정보 (엔드포인트 메타데이터)
-async function handleMcpGet(c: Context<Env>): Promise<Response> {
-    const origin = new URL(c.req.url).origin;
-    return c.json({
-        mcp: true,
-        version: '1.0.0',
-        transport: 'http',
-        endpoint: `${origin}/api/mcp`
-    });
-}
-
-mcpRoutes.get('/', (c) => handleMcpGet(c));
+mcpRoutes.get('/', (c) => {
+    c.header('Allow', 'POST, OPTIONS');
+    return c.body(null, 405);
+});
 
 // 공통 JSON-RPC 처리 함수
 async function handleJsonRpc(c: Context<Env>, body: any, user: User | null) {
