@@ -2708,6 +2708,7 @@ window.shareAskChatGPT = shareAskChatGPT;
 window.scrollToBacklinks = scrollToBacklinks;
 window.showSubdocs = showSubdocs;
 window.showCategory = showCategory;
+window.showHome = showHome;
 window.navigateTo = navigateTo;
 window.promptMove = promptMove;
 window.confirmDelete = confirmDelete;

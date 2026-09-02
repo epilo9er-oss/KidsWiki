@@ -24,6 +24,7 @@ const headTags = renderHeadTags(bundles);
 const bodyScripts = renderBodyScripts(bundles);
 const bakedTitle = title.replace(/KidsWiki/g, branding.wikiName);
 const customHeader = injectCustomHeader ? branding.customHeader : '';
+const bootstrapCommon = pagePath !== '/login.html' && pagePath !== '/error.html';
 // 컬러 테마 스킨.
 // - 멀티 스킨 모드(WIKI_THEMES 에 2개 이상): 각 스킨을 html[data-wiki-theme] 로 스코프
 //   베이킹하고, 운영자 기본 선택 스킨을 <html data-wiki-theme> 로 SSR(무JS·초기 페인트
@@ -92,6 +93,12 @@ const forceDarkBootScript = singleDarkOnly
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    {bootstrapCommon && <script is:inline>
+        window.__wikiBootstrap = {
+            auth: fetch('/api/me').catch(function () { return null; }),
+            config: fetch('/api/config').catch(function () { return null; }),
+        };
+    </script>}
     <Fragment set:html={headTags.prepend} />
     <title class="app-wiki-name">{bakedTitle}</title>
     <link rel="icon" id="wiki-favicon" href={branding.wikiFaviconUrl} />
@@ -105,6 +112,9 @@ const forceDarkBootScript = singleDarkOnly
 </head>
 
 <body data-layout-mode={branding.layoutMode} style="-webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;">
+    <div id="spaProgressBar" class="spa-progress-bar d-none" role="progressbar" aria-label="페이지 이동 중">
+        <div class="spa-progress-bar-inner"></div>
+    </div>
     <!-- 레이아웃 모드 사용자 오버라이드 FOUC 방지: 파싱 중 즉시 적용(common.ts applyLayoutOverride 와 동일 키). -->
     <script is:inline>try{var m=localStorage.getItem('layoutModeOverride');if(m&&['default','left-toc','right-toc','docs','wide'].indexOf(m)>=0)document.body.setAttribute('data-layout-mode',m);}catch(e){}</script>
     <slot />

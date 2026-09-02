@@ -78,6 +78,40 @@ var currentUser = null;
 var _authCheckPromise = null;
 var _configLoadPromise = null;
 
+function takeBootstrapRequest(name, url) {
+    const bootstrap = window.__wikiBootstrap;
+    const request = bootstrap && bootstrap[name];
+    if (!request) return fetch(url);
+    delete bootstrap[name];
+    return Promise.resolve(request).then(
+        response => response || fetch(url),
+        () => fetch(url),
+    );
+}
+
+function showPageNavigationProgress(event) {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const anchor = event.target?.closest?.('a[href]');
+    if (!anchor || anchor.hasAttribute('download')) return;
+    const target = anchor.getAttribute('target');
+    if (target && target !== '_self') return;
+
+    const href = anchor.getAttribute('href');
+    if (!href || href.startsWith('#')) return;
+
+    try {
+        const destination = new URL(anchor.href || href, window.location.href);
+        if (destination.origin !== window.location.origin || !['http:', 'https:'].includes(destination.protocol)) return;
+        if (destination.pathname === window.location.pathname && destination.search === window.location.search && destination.hash) return;
+        document.getElementById('spaProgressBar')?.classList.remove('d-none');
+    } catch { /* 잘못된 링크는 브라우저 기본 동작에 맡긴다. */ }
+}
+
+document.addEventListener('click', showPageNavigationProgress);
+window.addEventListener('pageshow', () => {
+    document.getElementById('spaProgressBar')?.classList.add('d-none');
+});
+
 
 // ── URL 스킴 검증 (XSS 방지) ──
 function isSafeUrl(url) {
@@ -808,7 +842,7 @@ async function performLoadConfig() {
     // 아래 단일 실행 promise를 공유하므로 /api/me 요청이 중복되지 않는다.
     const authPromise = checkAuth();
     try {
-        const res = await fetch('/api/config');
+        const res = await takeBootstrapRequest('config', '/api/config');
         if (res.ok) {
             appConfig = await res.json();
             // ESM 모듈은 var 재바인딩이 globalThis 에 자동 반영되지 않으므로 명시적 미러.
@@ -925,7 +959,7 @@ async function performAuthCheck() {
     }
 
     try {
-        const res = await fetch('/api/me');
+        const res = await takeBootstrapRequest('auth', '/api/me');
         if (!res.ok) {
             if (res.status === 401) {
                 currentUser = null;

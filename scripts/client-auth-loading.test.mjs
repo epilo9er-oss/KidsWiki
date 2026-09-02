@@ -11,7 +11,28 @@ test('인증 확인 전 헤더는 로그인 상태를 추측해 표시하지 않
     }
 });
 
-test('loadConfig는 인증을 병렬로 시작하고 동시 checkAuth와 요청을 공유한다', async () => {
+test('전체 페이지 이동은 즉시 피드백을 주고 정적 자산·인증 요청의 워터폴을 줄인다', async () => {
+    const [layout, header, headers, common] = await Promise.all([
+        readFile(new URL('../src/astro/layouts/BaseLayout.astro', import.meta.url), 'utf8'),
+        readFile(new URL('../public/components/header.html', import.meta.url), 'utf8'),
+        readFile(new URL('../public/_headers', import.meta.url), 'utf8'),
+        readFile(new URL('../src/client/common.ts', import.meta.url), 'utf8'),
+    ]);
+
+    assert.match(layout, /id="spaProgressBar"[^>]+role="progressbar"/);
+    assert.match(layout, /__wikiBootstrap[\s\S]+fetch\('\/api\/me'\)[\s\S]+fetch\('\/api\/config'\)/);
+    assert.match(common, /document\.addEventListener\('click', showPageNavigationProgress\)/);
+
+    const logo = header.match(/<a[^>]+class="[^"]*navbar-brand[^"]*"[^>]*>/)?.[0] || '';
+    assert.match(logo, /onclick="[^"]*showHome/);
+
+    assert.match(
+        headers,
+        /\/dist\/chunks\/\*[\s\S]+Cache-Control:\s*public,\s*max-age=31536000,\s*immutable/,
+    );
+});
+
+test('조기 시작한 설정·인증 요청을 loadConfig와 checkAuth가 중복 없이 공유한다', async () => {
     const globalKeys = ['window', 'document', 'localStorage', 'fetch'];
     const originals = Object.fromEntries(globalKeys.map((key) => [
         key,
@@ -64,6 +85,10 @@ test('loadConfig는 인증을 병렬로 시작하고 동시 checkAuth와 요청�
         }
         return { ok: false, status: 404 };
     };
+    globalThis.window.__wikiBootstrap = {
+        config: globalThis.fetch('/api/config'),
+        auth: globalThis.fetch('/api/me'),
+    };
 
     const server = await createServer({
         appType: 'custom',
@@ -74,8 +99,10 @@ test('loadConfig는 인증을 병렬로 시작하고 동시 checkAuth와 요청�
         await server.ssrLoadModule('/src/client/common.ts');
         const first = globalThis.window.loadConfig();
         await new Promise(setImmediate);
-        assert.equal(meCalls, 1, '설정 응답을 기다리는 동안에도 인증 확인을 시작해야 한다');
+        assert.equal(meCalls, 1, 'head에서 시작한 인증 요청을 다시 만들면 안 된다');
         assert.equal(configCalls, 1);
+        assert.equal(globalThis.window.__wikiBootstrap.auth, undefined);
+        assert.equal(globalThis.window.__wikiBootstrap.config, undefined);
 
         const second = globalThis.window.checkAuth();
         const third = globalThis.window.loadConfig();
