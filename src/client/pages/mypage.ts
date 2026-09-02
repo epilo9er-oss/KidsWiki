@@ -369,7 +369,7 @@ import { renderUserAvatar } from '../utils/avatar';
             document.getElementById('nameInput').value = window.currentUser.name;
             const privToggle = document.getElementById('picturePrivateToggle');
             if (privToggle) privToggle.checked = !!window.currentUser.picture_private;
-            // MCP 편집 즉시반영 설정은 직접 게시 가능한 신뢰 기여자·관리자에게만 노출한다.
+            // MCP 승인 없는 즉시 반영 설정은 직접 게시 가능한 신뢰 기여자·관리자에게만 노출한다.
             const canEditWiki = !!(window.currentUser.permissions && window.currentUser.permissions['wiki:edit']);
             const canPublishDirectly = !!window.currentUser.trusted_contributor
                 || !!(window.currentUser.permissions && window.currentUser.permissions['admin:access']);
@@ -428,8 +428,8 @@ import { renderUserAvatar } from '../utils/avatar';
 
                 Swal.fire({
                     icon: 'success',
-                    title: enabled ? 'MCP 편집 즉시반영을 허용했습니다.' : 'MCP 편집 즉시반영을 비활성화했습니다.',
-                    text: enabled ? '연결된 MCP 클라이언트를 새로고침하면 apply_edit 도구가 노출됩니다.' : '',
+                    title: enabled ? 'MCP 즉시 반영 도구를 허용했습니다.' : 'MCP 즉시 반영 도구를 비활성화했습니다.',
+                    text: enabled ? '연결된 MCP 클라이언트를 새로고침하면 apply_edit과 revert_page가 노출됩니다.' : '',
                     toast: true,
                     position: 'top-end',
                     showConfirmButton: false,
@@ -828,7 +828,7 @@ import { renderUserAvatar } from '../utils/avatar';
                 </div>
                 <div class="mt-1 mb-2 text-start">
                     <label class="form-label small mb-1">편집 요약</label>
-                    <input type="text" id="mcpApproveSummary" class="form-control form-control-sm" maxlength="200" value="${window.escapeHtml(summaryDefault)}">
+                    <input type="text" id="mcpApproveSummary" class="form-control form-control-sm" maxlength="255" value="${window.escapeHtml(summaryDefault)}">
                 </div>
             `;
 

@@ -13,7 +13,7 @@
 //             mcp_drafts 테이블에 사용자별로 누적된다 (같은 슬러그에 대해 1개).
 //             commit_edit 가 base_revision_id 와 현재 last_revision_id 를 비교해 충돌 감지.
 //             draft 는 마지막 활동 이후 12시간이 지나면 자정 크론이 일괄 삭제.
-//        - 편집(즉시 적용): revert_page
+//   - `mcp_instant_apply=1`: + USER_INSTANT_EDIT_TOOL_DEFS (revert_page) + apply_edit
 //   - 관리자 (`admin:access`): + ADMIN_ONLY_TOOL_DEFS
 //        - 읽기: list_deleted_pages
 //        - 편집(즉시 적용): delete_page, restore_page, move_page
@@ -194,8 +194,7 @@ export const ADMIN_ONLY_READ_TOOL_DEFS: McpToolDef[] = [
 ];
 
 // ────────────────────────────────────────────────────────────────
-// MCP 편집이 허용된 신뢰 기여자·관리자가 호출 가능한 편집 도구 정의.
-// (revert_page 는 본질적으로 새 리비전을 만드는 편집이므로 user 계층에 둔다.)
+// MCP 편집이 허용된 신뢰 기여자·관리자가 호출 가능한 draft 편집 도구 정의.
 // ────────────────────────────────────────────────────────────────
 
 const HEADING_RULE_NOTE =
@@ -249,7 +248,7 @@ export const USER_EDIT_TOOL_DEFS: McpToolDef[] = [
     },
     {
         name: 'commit_edit',
-        description: 'draft 에 누적된 편집을 승인 대기로 제출합니다. base_revision_id 가 그 사이 변경되었으면(=다른 사용자가 페이지를 수정) 거부합니다 — 그 경우 discard_edit 후 read_document 로 최신 상태를 다시 읽고 편집을 재구성해야 합니다. 신규 페이지 draft 인데 commit 시점에 이미 같은 슬러그가 존재하면 같은 사유로 거부합니다. summary 는 새 리비전의 편집 요약입니다 (선택, 최대 255자). 저장 시 `[+N줄 -M줄]` 변경량 표시가 자동으로 붙습니다 (예: `[+5줄 -2줄] 오타 수정`).\n\n응답에도 이전 본문 대비 라인 단위 변경량(`lines_added` / `lines_removed`)이 포함됩니다 — git diff --stat 의 +N/-M 와 동일한 의미입니다 (CRLF 정규화 후 LCS 기반으로 산출).\n\n**항상 승인 대기로 제출**됩니다. draft 는 즉시 리비전이 되지 않고 OAuth 토큰 소유자(=이 MCP 를 연결한 본인) 에게 승인 대기로 제출됩니다. 본인이 마이페이지 / 알림 / 문서 배너에서 검토 후 승인해야 비로소 리비전이 만들어집니다. 거부 시 draft 는 폐기됩니다.\n\n승인 단계 없이 즉시 반영하려면(마이페이지에서 "MCP 편집 즉시반영 허용" 을 켠 경우) commit_edit 대신 apply_edit 도구를 사용하세요 — 도구 목록에 apply_edit 이 보이면 활성 상태입니다.',
+        description: 'draft 에 누적된 편집을 승인 대기로 제출합니다. base_revision_id 가 그 사이 변경되었으면(=다른 사용자가 페이지를 수정) 거부합니다 — 그 경우 discard_edit 후 read_document 로 최신 상태를 다시 읽고 편집을 재구성해야 합니다. 신규 페이지 draft 인데 commit 시점에 이미 같은 슬러그가 존재하면 같은 사유로 거부합니다. summary 는 새 리비전의 편집 요약입니다 (선택, 최대 255자). 저장 시 `[+N줄 -M줄]` 변경량 표시가 자동으로 붙습니다 (예: `[+5줄 -2줄] 오타 수정`).\n\n응답에도 이전 본문 대비 라인 단위 변경량(`lines_added` / `lines_removed`)이 포함됩니다 — git diff --stat 의 +N/-M 와 동일한 의미입니다 (CRLF 정규화 후 LCS 기반으로 산출).\n\n**항상 승인 대기로 제출**됩니다. draft 는 즉시 리비전이 되지 않고 OAuth 토큰 소유자(=이 MCP 를 연결한 본인) 에게 승인 대기로 제출됩니다. 본인이 마이페이지 / 알림 / 문서 배너에서 검토 후 승인해야 비로소 리비전이 만들어집니다. 거부 시 draft 는 폐기됩니다.\n\n승인 단계 없이 즉시 반영하려면(마이페이지에서 "승인 없는 즉시 반영 도구 허용" 을 켠 경우) commit_edit 대신 apply_edit 도구를 사용하세요 — 도구 목록에 apply_edit 이 보이면 활성 상태입니다.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -269,10 +268,14 @@ export const USER_EDIT_TOOL_DEFS: McpToolDef[] = [
             },
             required: ['draft_id']
         }
-    },
+    }
+];
+
+// 승인 없는 즉시 반영을 허용한 사용자에게만 추가로 노출되는 편집 도구.
+export const USER_INSTANT_EDIT_TOOL_DEFS: McpToolDef[] = [
     {
         name: 'revert_page',
-        description: '문서를 특정 과거 리비전으로 되돌립니다 (즉시 적용 — draft 모델 미사용). revision_id 는 read_revision 또는 get_recent_changes 응답에서 얻은 정수 id 입니다. 되돌리기는 새 리비전을 만들어 원래 본문 그대로 다시 저장하는 방식이며, 과거 리비전 자체를 삭제하지 않습니다.',
+        description: '문서를 특정 과거 리비전으로 되돌립니다 (승인 없이 즉시 적용 — draft 모델 미사용). 마이페이지에서 "승인 없는 즉시 반영 도구 허용" 을 켠 경우에만 노출됩니다. revision_id 는 read_revision 또는 get_recent_changes 응답에서 얻은 정수 id 입니다. 되돌리기는 새 리비전을 만들어 원래 본문 그대로 다시 저장하는 방식이며, 과거 리비전 자체를 삭제하지 않습니다.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -1609,6 +1612,9 @@ export async function dispatchAdminEditTool(c: Context<Env>, user: User, toolNam
         if (!rbac.can(user.role, 'wiki:edit')) {
             return asTextResult('Error: wiki:edit 권한이 필요합니다.', true);
         }
+        if (!user.mcp_instant_apply) {
+            return asTextResult('Error: 승인 없는 즉시 반영 도구가 비활성화되어 있습니다. 마이페이지 설정에서 활성화한 뒤 사용하세요.', true);
+        }
         const slug = String(args.title || '').trim();
         const revisionId = Number(args.revision_id);
         if (!slug) return asTextResult('Error: title 이 필요합니다.', true);
@@ -2233,7 +2239,7 @@ export async function dispatchAdminEditTool(c: Context<Env>, user: User, toolNam
     return null;
 }
 
-// 신뢰 기여자(`wiki:edit`) 에게 추가로 노출되는 도구 묶음 (읽기 + draft 편집 + revert).
+// 신뢰 기여자(`wiki:edit`) 에게 기본 노출되는 도구 묶음 (읽기 + draft 편집).
 export const USER_TOOL_DEFS: McpToolDef[] = [
     ...USER_READ_TOOL_DEFS,
     ...USER_EDIT_TOOL_DEFS,
@@ -2247,8 +2253,15 @@ export const ADMIN_ONLY_TOOL_DEFS: McpToolDef[] = [
 
 // /api/mcp 의 information 도구가 신뢰 기여자(`wiki:edit`) 에게 추가로 덧붙여 보여줄 가이드.
 // 관리자에게도 동일하게 노출된다.
-export function buildUserEditInformationSuffix(userName: string): string {
+export function buildUserEditInformationSuffix(userName: string, canInstantApply: boolean): string {
     const readIntro = `\n\n## 편집 보조 읽기 도구 (현재 인증된 사용자: ${userName})\n${USER_READ_TOOL_DEFS.map(t => `- ${t.name}`).join('\n')}`;
+    const instantApplyIntro = canInstantApply
+        ? `**승인 없이 즉시 적용**: apply_edit / ${USER_INSTANT_EDIT_TOOL_DEFS.map(t => t.name).join(' / ')}.`
+        : `**승인 없이 즉시 적용 비활성화**: 마이페이지에서 설정을 켜야 apply_edit / ${USER_INSTANT_EDIT_TOOL_DEFS.map(t => t.name).join(' / ')} 도구가 노출됩니다.`;
+    const editToolNames = [
+        ...USER_EDIT_TOOL_DEFS.map(t => t.name),
+        ...(canInstantApply ? ['apply_edit', ...USER_INSTANT_EDIT_TOOL_DEFS.map(t => t.name)] : []),
+    ];
     const editIntro = `\n\n## 편집 도구\n\n` +
         `**stateful draft 모델**: create_or_update_page / patch_page / edit_section 은 즉시 저장하지 않고 \`mcp_drafts\` 에 누적합니다 ` +
         `(같은 슬러그에 대해 사용자별 1개). 응답으로 \`draft_id\` 를 받고, 편집이 끝나면 commit_edit(draft_id, summary) 를 호출해 ` +
@@ -2260,8 +2273,8 @@ export function buildUserEditInformationSuffix(userName: string): string {
         `**항상 승인 대기로 제출**: commit_edit 를 호출하면 draft 는 즉시 리비전이 되지 않고 OAuth 토큰 소유자(=이 MCP 를 연결한 본인) 에게 승인 대기로 제출됩니다. ` +
         `본인이 마이페이지 / 알림 / 문서 배너에서 검토 후 승인해야 비로소 리비전이 만들어집니다. 거부 시 draft 는 폐기됩니다. ` +
         `승인 대기 상태 draft 는 list_drafts / read_draft 의 \`status\` 필드가 \`pending_approval\` 로 표시되며, AI 측에서는 더 이상 수정할 수 없습니다 (discard_edit 로 폐기만 가능).\n\n` +
-        `**즉시 적용** (draft 모델 미사용): revert_page.\n\n` +
-        USER_EDIT_TOOL_DEFS.map(t => `- ${t.name}`).join('\n');
+        `${instantApplyIntro}\n\n` +
+        editToolNames.map(name => `- ${name}`).join('\n');
     return `${readIntro}${editIntro}`;
 }
 

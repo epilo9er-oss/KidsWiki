@@ -3,7 +3,7 @@
 // mcp_drafts 의 편집안을 실제 리비전으로 확정하는 로직의 단일 소스다. 두 진입점이 공유한다:
 //   1) HTTP 승인: POST /api/mcp-submissions/:id/approve (mcp-submissions.ts) — 승인 대기(submitted)
 //      draft 를 사용자가 마이페이지에서 검토 후 승인.
-//   2) MCP 즉시 적용: apply_edit 도구 (mcp.ts) — mcp_instant_apply 를 켠 사용자가 승인 단계를 건너뛰고
+//   2) MCP 즉시 적용: apply_edit 도구 (mcp.ts) — 승인 없는 즉시 반영을 켠 사용자가 승인 단계를 건너뛰고
 //      draft 를 곧바로 리비전으로 확정.
 //
 // 어느 경로든 충돌/ACL/카테고리/제목 재검증 → commitPageMutation(통합 저장 파이프라인) →
@@ -408,12 +408,12 @@ export async function applyDraftMutation(
 }
 
 // ────────────────────────────────────────────────────────────────
-// apply_edit 도구 (즉시 적용) — mcp_instant_apply 를 켠 사용자에게만 노출.
+// apply_edit 도구 (즉시 적용) — 승인 없는 즉시 반영을 켠 사용자에게만 노출.
 // ────────────────────────────────────────────────────────────────
 
 export const APPLY_EDIT_TOOL_DEF = {
     name: 'apply_edit',
-    description: 'draft 에 누적된 편집을 승인 단계 없이 **즉시** 새 리비전으로 확정합니다 (마이페이지에서 "MCP 편집 즉시반영 허용" 을 켠 경우에만 노출). commit_edit 이 승인 대기로 제출하는 것과 달리, 이 도구는 곧바로 저장합니다.\n\ncommit_edit 와 동일한 충돌 검증을 적용합니다 — base_revision_id 가 그 사이 변경되었거나(다른 사용자가 페이지 수정), 신규 페이지 draft 인데 같은 슬러그가 이미 존재하면 거부합니다. 편집 권한(edit_acl)/관리자 전용 카테고리도 적용 시점에 재검증됩니다.\n\nsummary 는 새 리비전의 편집 요약입니다 (선택, 최대 255자). 저장 시 `[+N줄 -M줄]` 변경량 표시가 자동으로 붙습니다. 응답에는 새 revision_id 와 라인 단위 변경량(lines_added / lines_removed)이 포함됩니다.\n\n승인 검토가 필요하면 apply_edit 대신 commit_edit 을 사용하세요.',
+    description: 'draft 에 누적된 편집을 승인 단계 없이 **즉시** 새 리비전으로 확정합니다 (마이페이지에서 "승인 없는 즉시 반영 도구 허용" 을 켠 경우에만 노출). 설정을 켜도 자동으로 편집을 시작하지 않으며, 이 도구를 호출한 draft 만 곧바로 저장합니다.\n\ncommit_edit 와 동일한 충돌 검증을 적용합니다 — base_revision_id 가 그 사이 변경되었거나(다른 사용자가 페이지 수정), 신규 페이지 draft 인데 같은 슬러그가 이미 존재하면 거부합니다. 편집 권한(edit_acl)/관리자 전용 카테고리도 적용 시점에 재검증됩니다.\n\nsummary 는 새 리비전의 편집 요약입니다 (선택, 최대 255자). 저장 시 `[+N줄 -M줄]` 변경량 표시가 자동으로 붙습니다. 응답에는 새 revision_id 와 라인 단위 변경량(lines_added / lines_removed)이 포함됩니다.\n\n승인 검토가 필요하면 apply_edit 대신 commit_edit 을 사용하세요.',
     inputSchema: {
         type: 'object',
         properties: {
@@ -496,7 +496,7 @@ export async function dispatchApplyEditTool(
     }
     // 방어선: 도구 노출은 mcp.ts 에서 게이팅하지만 디스패처에서도 설정을 재확인한다.
     if (!user.mcp_instant_apply) {
-        return toolError('Error: MCP 편집 즉시반영이 비활성화되어 있습니다. 마이페이지 설정에서 활성화한 뒤 사용하거나, commit_edit 으로 승인 대기 제출하세요.');
+        return toolError('Error: 승인 없는 즉시 반영 도구가 비활성화되어 있습니다. 마이페이지 설정에서 활성화한 뒤 사용하거나, commit_edit 으로 승인 대기 제출하세요.');
     }
 
     const draftId = Number(args.draft_id);

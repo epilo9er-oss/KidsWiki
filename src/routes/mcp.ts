@@ -15,6 +15,7 @@ import {
 } from '../utils/mcpDispatch';
 import {
     USER_TOOL_DEFS,
+    USER_INSTANT_EDIT_TOOL_DEFS,
     ADMIN_ONLY_TOOL_DEFS,
     buildUserEditInformationSuffix,
     buildAdminOnlyInformationSuffix,
@@ -31,7 +32,8 @@ const mcpRoutes = new Hono<Env>();
 // JSON-RPC 라우팅을 담당하며, 다음 3계층으로 도구를 노출한다 (admin-mcp.ts 에서 합류):
 //   1) guest (Authorization 헤더 없음 또는 토큰은 유효하지만 권한이 박탈된 사용자)
 //      → MCP_TOOL_DEFS_ALL 의 읽기 도구만.
-//   2) 신뢰 기여자(`wiki:edit`) → 1) + USER_TOOL_DEFS (draft 편집 + revert + 보조 읽기).
+//   2) 신뢰 기여자(`wiki:edit`) → 1) + USER_TOOL_DEFS (draft 편집 + 보조 읽기).
+//      mcp_instant_apply=1 이면 apply_edit / revert_page 를 추가한다.
 //   3) 관리자(`admin:access`) → 1) + 2) + ADMIN_ONLY_TOOL_DEFS (삭제/복원/이동 + 삭제 목록).
 //
 // WIKI_VISIBILITY=closed 환경에서는 guest 진입을 401 로 막아 OAuth 흐름 트리거.
@@ -111,6 +113,12 @@ mcpRoutes.get('/', (c) => {
     return c.body(null, 405);
 });
 
+export function getUserToolDefs(canInstantApply: boolean) {
+    return canInstantApply
+        ? [...USER_TOOL_DEFS, APPLY_EDIT_TOOL_DEF, ...USER_INSTANT_EDIT_TOOL_DEFS]
+        : USER_TOOL_DEFS;
+}
+
 // 공통 JSON-RPC 처리 함수
 async function handleJsonRpc(c: Context<Env>, body: any, user: User | null) {
     const { jsonrpc, method, params, id } = body;
@@ -128,7 +136,7 @@ async function handleJsonRpc(c: Context<Env>, body: any, user: User | null) {
     const canEdit = rbac.can(role, 'wiki:edit') && canPublishDirectly;
     const canSeePrivate = rbac.can(role, 'wiki:private');
     const privateFilter = canSeePrivate ? '' : ' AND is_private = 0';
-    // MCP 편집 즉시반영 허용(마이페이지 설정) 사용자에게만 apply_edit(즉시 적용) 도구를 추가 노출한다.
+    // 승인 없는 즉시 반영을 허용한 사용자에게만 apply_edit / revert_page 를 추가 노출한다.
     // 설정을 켠 신뢰 기여자·관리자만 대상 — 일반 사용자의 MCP 직접 게시 우회를 막는다.
     const canInstantApply = canEdit && !!user?.mcp_instant_apply;
     // 단계적으로 노출 도구를 합성한다 — guest 는 read 도구만, wiki:edit 는 + USER_TOOL_DEFS,
@@ -136,8 +144,7 @@ async function handleJsonRpc(c: Context<Env>, body: any, user: User | null) {
     const sharedToolDefs = getSharedToolDefs(c.env);
     const visibleToolDefs = [
         ...sharedToolDefs,
-        ...(canEdit ? USER_TOOL_DEFS : []),
-        ...(canInstantApply ? [APPLY_EDIT_TOOL_DEF] : []),
+        ...(canEdit ? getUserToolDefs(canInstantApply) : []),
         ...(isAdmin ? ADMIN_ONLY_TOOL_DEFS : []),
     ];
     const visibleToolNames = new Set(visibleToolDefs.map(t => t.name));
@@ -170,7 +177,7 @@ async function handleJsonRpc(c: Context<Env>, body: any, user: User | null) {
     if (method === 'tools/list') {
         const intro = buildInformationIntro(c, sharedToolDefs);
         const userName = user?.name || '';
-        const userSuffix = canEdit ? buildUserEditInformationSuffix(userName) : '';
+        const userSuffix = canEdit ? buildUserEditInformationSuffix(userName, canInstantApply) : '';
         const adminSuffix = isAdmin ? buildAdminOnlyInformationSuffix(userName) : '';
         const toolNames = visibleToolDefs.map(t => t.name).join(', ');
         const informationDescription = `${intro}${userSuffix}${adminSuffix}\n\n사용 가능한 MCP 도구: ${toolNames}. 각 도구의 세부 설명은 information 도구를 호출하여 확인할 수 있습니다.`;

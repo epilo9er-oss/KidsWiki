@@ -75,6 +75,8 @@ function applyBsTheme(mode) {
 // ── 전역 변수 ──
 var appConfig = { wikiName: 'KidsWiki' };
 var currentUser = null;
+var _authCheckPromise = null;
+var _configLoadPromise = null;
 
 
 // ── URL 스킴 검증 (XSS 방지) ──
@@ -793,7 +795,18 @@ function applyAnnouncementBanner() {
     }
 }
 
-async function loadConfig() {
+function loadConfig() {
+    if (_configLoadPromise) return _configLoadPromise;
+    _configLoadPromise = performLoadConfig().finally(() => {
+        _configLoadPromise = null;
+    });
+    return _configLoadPromise;
+}
+
+async function performLoadConfig() {
+    // 설정 조회가 느려도 헤더 인증 확인은 즉시 시작한다. 명시적 checkAuth 호출과는
+    // 아래 단일 실행 promise를 공유하므로 /api/me 요청이 중복되지 않는다.
+    const authPromise = checkAuth();
     try {
         const res = await fetch('/api/config');
         if (res.ok) {
@@ -888,11 +901,20 @@ async function loadConfig() {
     applyAnnouncementBanner();
 
     // 전역 인증 상태 동기화 (레이아웃 주입 여부와 상관없이 항상 수행)
-    await checkAuth();
+    await authPromise;
 }
 
 // ── 인증 확인 + 네비바 UI 업데이트 ──
-async function checkAuth() {
+function checkAuth() {
+    if (_authCheckPromise) return _authCheckPromise;
+    _authCheckPromise = performAuthCheck().then((resolved) => {
+        // 401/200은 이 문서의 확정된 인증 스냅샷이다. 네트워크·서버 오류만 재시도한다.
+        if (!resolved) _authCheckPromise = null;
+    });
+    return _authCheckPromise;
+}
+
+async function performAuthCheck() {
     // 로그인 버튼 href에 현재 경로를 redirect 파라미터로 추가
     // /login 페이지 자체는 제외하여 무한 리다이렉트 방지
     const currentPath = window.location.pathname + window.location.search;
@@ -904,34 +926,48 @@ async function checkAuth() {
 
     try {
         const res = await fetch('/api/me');
-        if (res.ok) {
-            currentUser = await res.json();
-            // ESM 모듈은 var 재바인딩이 globalThis 에 자동 반영되지 않으므로 명시적 미러.
-            // 다른 ESM 모듈 (edit/main.ts 등) 과 inline classic <script> 가 window.currentUser
-            // 를 읽어 인증 UI / 권한 분기를 처리하므로 즉시 노출해야 한다.
-            window.currentUser = currentUser;
-            document.querySelectorAll('#navLogin').forEach(el => el.classList.add('d-none'));
-            // 로그아웃용 개인 설정 톱니 버튼 숨김 — 로그인 사용자는 드롭다운의 "개인 설정" 항목 사용.
-            document.querySelectorAll('#navSettings').forEach(el => el.classList.add('d-none'));
-            document.querySelectorAll('#navUser').forEach(el => el.classList.remove('d-none'));
-
-            document.querySelectorAll('#userAvatar').forEach(el => {
-                el.innerHTML = renderUserAvatar(currentUser.picture, currentUser.name, 32, 'user-avatar m-0');
-            });
-            document.querySelectorAll('#userName').forEach(el => el.textContent = currentUser.name);
-
-            if (currentUser.role === 'admin' || currentUser.role === 'super_admin') {
-                document.querySelectorAll('#navAdminConsole').forEach(el => el.classList.remove('d-none'));
+        if (!res.ok) {
+            if (res.status === 401) {
+                currentUser = null;
+                window.currentUser = null;
+                document.querySelectorAll('#navUser').forEach(el => el.classList.add('d-none'));
+                document.querySelectorAll('#navAdminConsole').forEach(el => el.classList.add('d-none'));
+                document.querySelectorAll('#notificationBtnWrapper').forEach(el => el.classList.add('d-none'));
+                document.querySelectorAll('#navSettings, #navLogin').forEach(el => el.classList.remove('d-none'));
+                stopNotifPolling();
+                return true;
             }
-
-            // 알림 버튼 표시 및 카운트 로드
-            document.querySelectorAll('#notificationBtnWrapper').forEach(el => el.classList.remove('d-none'));
-            loadNotificationCount();
-            // 60초마다 알림 폴링 (탭 비활성 시 자동 중단)
-            startNotifPolling();
+            return false;
         }
+
+        currentUser = await res.json();
+        // ESM 모듈은 var 재바인딩이 globalThis 에 자동 반영되지 않으므로 명시적 미러.
+        // 다른 ESM 모듈 (edit/main.ts 등) 과 inline classic <script> 가 window.currentUser
+        // 를 읽어 인증 UI / 권한 분기를 처리하므로 즉시 노출해야 한다.
+        window.currentUser = currentUser;
+        document.querySelectorAll('#navLogin').forEach(el => el.classList.add('d-none'));
+        // 로그아웃용 개인 설정 톱니 버튼 숨김 — 로그인 사용자는 드롭다운의 "개인 설정" 항목 사용.
+        document.querySelectorAll('#navSettings').forEach(el => el.classList.add('d-none'));
+        document.querySelectorAll('#navUser').forEach(el => el.classList.remove('d-none'));
+
+        document.querySelectorAll('#userAvatar').forEach(el => {
+            el.innerHTML = renderUserAvatar(currentUser.picture, currentUser.name, 32, 'user-avatar m-0');
+        });
+        document.querySelectorAll('#userName').forEach(el => el.textContent = currentUser.name);
+
+        if (currentUser.role === 'admin' || currentUser.role === 'super_admin') {
+            document.querySelectorAll('#navAdminConsole').forEach(el => el.classList.remove('d-none'));
+        }
+
+        // 알림 버튼 표시 및 카운트 로드
+        document.querySelectorAll('#notificationBtnWrapper').forEach(el => el.classList.remove('d-none'));
+        loadNotificationCount();
+        // 60초마다 알림 폴링 (탭 비활성 시 자동 중단)
+        startNotifPolling();
+        return true;
     } catch (e) {
-        // 로그인 안 됨
+        // 인증 상태를 확인하지 못한 경우 기존/중립 UI를 유지한다.
+        return false;
     }
 }
 

@@ -64,11 +64,11 @@
             <!-- js 호환성을 위한 안보이는 래퍼 유지 -->
             <div id="notificationBtnWrapper" class="d-none"></div>
         </div>
-        <!-- 개인 설정 버튼 (로그아웃 상태에서만 노출 — 로그인 시 checkAuth 가 숨기고 드롭다운 항목으로 대체) -->
-        <button class="btn border-0 px-1 ms-2" type="button" id="navSettings" onclick="openSettingsModal()" title="개인 설정" aria-label="개인 설정">
+        <!-- 인증 확인 뒤 로그아웃 상태에서만 노출 — 로그인 시 드롭다운 항목으로 대체 -->
+        <button class="btn border-0 px-1 ms-2 d-none" type="button" id="navSettings" onclick="openSettingsModal()" title="개인 설정" aria-label="개인 설정">
             <i class="mdi mdi-cog-outline text-body"></i>
         </button>
-        <a class="btn border-0 px-1 ms-2" id="navLogin" href="/login" title="로그인"><i class="mdi mdi-login text-body"></i></a>
+        <a class="btn border-0 px-1 ms-2 d-none" id="navLogin" href="/login" title="로그인"><i class="mdi mdi-login text-body"></i></a>
 
         <!-- 햄버거 버튼 (사이드바 토글) -->
         <button class="navbar-toggler border-0 px-1 ms-2" type="button" data-bs-toggle="offcanvas"

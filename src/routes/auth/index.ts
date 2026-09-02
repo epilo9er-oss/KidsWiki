@@ -746,8 +746,10 @@ auth.get('/api/me', async (c) => {
     for (const key of permissionKeys) {
         permissions[key] = rbac.can(user.role, key);
     }
-    const trust = await getContributorTrustSummary(c.env.DB, user.id);
-    const badges = await getPublicUserBadges(c.env.DB, user.id);
+    const [trust, badges] = await Promise.all([
+        getContributorTrustSummary(c.env.DB, user.id),
+        getPublicUserBadges(c.env.DB, user.id),
+    ]);
     return c.json({
         id: user.id,
         name: user.name,
@@ -864,9 +866,9 @@ auth.put('/api/me/picture-privacy', requireAuth, async (c) => {
 
 /**
  * PUT /api/me/mcp-instant-apply
- * MCP 편집 즉시반영 허용 토글.
- *  - enabled=true  : mcp_instant_apply=1 — MCP 도구에 apply_edit(즉시 적용) 도구가 추가로 노출된다.
- *  - enabled=false : mcp_instant_apply=0 — 신뢰 기여자에게 commit_edit(본인 확인 제출)만 노출(기본).
+ * MCP 승인 없는 즉시 반영 도구 허용 토글.
+ *  - enabled=true  : mcp_instant_apply=1 — MCP 도구에 apply_edit / revert_page 가 추가로 노출된다.
+ *  - enabled=false : mcp_instant_apply=0 — draft 작성·승인 대기 제출 도구만 노출(기본).
  */
 auth.put('/api/me/mcp-instant-apply', requireAuth, async (c) => {
     const user = c.get('user')!;
@@ -880,7 +882,7 @@ auth.put('/api/me/mcp-instant-apply', requireAuth, async (c) => {
     const rbac = c.get('rbac') as RBAC;
     const isAdmin = rbac.can(user.role, 'admin:access');
     if (enabled && c.env.EDIT_REQUEST_ENABLED === 'true' && !isAdmin && !(await isTrustedContributor(db, user.id))) {
-        return c.json({ error: 'MCP 편집 즉시반영은 신뢰 기여자 또는 관리자만 켤 수 있습니다.' }, 403);
+        return c.json({ error: 'MCP 즉시 반영 도구는 신뢰 기여자 또는 관리자만 켤 수 있습니다.' }, 403);
     }
     await ensureMcpInstantApplyMigration(db);
     await db

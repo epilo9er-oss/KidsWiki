@@ -1,4 +1,4 @@
-// users 테이블에 mcp_instant_apply 컬럼이 누락된 기존 D1 데이터베이스를 위한 idempotent
+// users 테이블에 mcp_instant_apply(승인 없는 즉시 반영 도구 허용) 컬럼이 누락된 기존 D1 데이터베이스를 위한 idempotent
 // 런타임 마이그레이션. (mcpDraftsMigration 과 동일 패턴)
 //
 // users 는 세션 미들웨어·MCP Bearer 인증 등 매 요청 핫패스에서 SELECT 되므로, 컬럼을
